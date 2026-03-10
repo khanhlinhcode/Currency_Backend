@@ -1,0 +1,20 @@
+numpy==1.26.4
+pandas
+matplotlib
+seaborn
+opencv-python
+scikit-learn
+tensorflow==2.16.2; platform_system != "Darwin" or platform_machine != "arm64"
+tensorflow-macos==2.16.2; platform_system == "Darwin" and platform_machine == "arm64"
+tensorflow-metal==1.2.0; platform_system == "Darwin" and platform_machine == "arm64"
+torch
+torchvision
+tqdm
+fastapi
+uvicorn
+python-multipart
+sqlalchemy
+python-jose[cryptography]
+passlib==1.7.4
+bcrypt==3.2.2
+pillow
