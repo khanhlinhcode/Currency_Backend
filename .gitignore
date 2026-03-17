@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+dataset/raw/
+dataset/processed/
+models/*.h5
+models/*.pt
+.ipynb_checkpoints/
+.DS_Storedataset/
+*.keras
+*.h5
+*.png
