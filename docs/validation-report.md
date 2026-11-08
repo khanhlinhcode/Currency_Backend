@@ -56,8 +56,18 @@ The candidate pipeline was executed against the old split as a gate check. It st
 
 The pinned ONNX candidate is 17.46 MB, SHA-256 `737a0fcf1de09f8acf2f226e9ca54afc4a970f0738ae17dc135d146efda7487c`. Its 25-class output and nearest-neighbor input resize match the Keras source. A same-input comparison across all 1,537 historical test images found 100% top-1 agreement and a maximum absolute probability difference of `3.64e-6`. The ONNX-only evaluation measured 96.2915% accuracy, 95.9396% macro F1, ECE 0.022638, 95.7059% accepted coverage and 97.8246% accuracy among accepted predictions at confidence 0.6. Its Apple silicon inference p50/p95/p99 was 29.17/51.25/97.43 ms. These remain **diagnostic** because the repeated audit still found 182 exact cross-split duplicate groups, two conflicting-label groups and no verified physical-note grouping. The release gate still rejects promotion.
 
-For the Render Free resource profile, a Linux AMD64 container was run locally with a 0.1 CPU quota and 512 MB RAM. It reached `/ready` and used 184.4 MiB at idle. Three distinct JPEGs, ten warmups and 100 measured HTTP predictions at concurrency one yielded 100/100 successes, 0.295 requests/s, client p50/p95/p99 3,207/4,699/5,600 ms and inference p95 3,102 ms. This measurement ran through AMD64 emulation on Apple silicon, so it is a resource-constrained smoke benchmark, **not** cloud latency evidence. Additional concurrency profiles and actual Render measurements are still required.
+For the Render Free resource profile, a Linux AMD64 container was run locally with a 0.1 CPU quota and 512 MB RAM. It reached `/ready` and used 184.4 MiB at idle. Three distinct JPEGs, ten warmups and 100 measured HTTP predictions were used for each concurrency profile:
+
+| Concurrent requests | Successes | Throughput | Client p95 | Client p99 | Queue p95 | Inference p95 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 100/100 | 0.295 req/s | 4.70 s | 5.60 s | 0.0001 s | 3.10 s |
+| 4 | 100/100 | 0.237 req/s | 22.00 s | 24.20 s | 12.00 s | 6.19 s |
+| 8 | 100/100 | 0.226 req/s | 42.79 s | 46.69 s | 30.80 s | 6.20 s |
+
+The container was not OOM-killed; a post-run memory snapshot showed 484.5 MiB of 512 MiB in use. The measurements ran through AMD64 emulation on Apple silicon with local SQLite and disk storage, so they are resource-constrained diagnostics, **not** cloud latency evidence. They show severe queuing at concurrent load and little memory headroom. Actual Render measurements with Supabase PostgreSQL and S3 are required before setting a service target.
 
 The isolated Supabase project `currency-ai-staging` and private bucket `currency-ai-staging-private` were created in Singapore. The checksum-pinned ONNX file was uploaded under `staging/models/1.1.0/efficientnetb0_candidate.onnx`. This is staging infrastructure, not an approved production release.
 
-Tracked reports: [dataset audit](evidence/2026-11-08-dataset-audit-summary.json), [ONNX evaluation](evidence/2026-11-08-onnx-evaluation.json), [same-input parity](evidence/2026-11-08-onnx-parity.json), [local Free-profile concurrency one](evidence/2026-11-08-free-local-c1.json).
+The backend commit `5b9a8e0b` and frontend commit `f48e32ca` passed their GitHub Actions CI workflows. The Render Free static dashboard was deployed at `https://currency-ai-free-dashboard.onrender.com`; both `/` and `/history` returned HTTP 200 with the SPA rewrite. The backend Blueprint still requires the database and administrator passwords to be entered by the project owner before deployment, so no cloud API or cloud performance result is claimed yet.
+
+Tracked reports: [dataset audit](evidence/2026-11-08-dataset-audit-summary.json), [ONNX evaluation](evidence/2026-11-08-onnx-evaluation.json), [same-input parity](evidence/2026-11-08-onnx-parity.json), [warm ONNX benchmark](evidence/2026-11-08-onnx-warm-benchmark.json), [diagnostic run record](evidence/2026-11-08-diagnostic-run.json), local Free-profile HTTP results at [concurrency 1](evidence/2026-11-08-free-local-c1.json), [4](evidence/2026-11-08-free-local-c4.json) and [8](evidence/2026-11-08-free-local-c8.json).

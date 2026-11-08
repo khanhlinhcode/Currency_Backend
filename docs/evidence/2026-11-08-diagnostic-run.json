@@ -1,0 +1,38 @@
+{
+  "run_id": "20261108T063700Z-onnx-diagnostic",
+  "status": "diagnostic",
+  "recorded_at": "2026-11-08T06:37:09.078665+00:00",
+  "model_version": "1.1.0",
+  "model_sha256": "737a0fcf1de09f8acf2f226e9ca54afc4a970f0738ae17dc135d146efda7487c",
+  "dataset_version": "a4d58e1ef81b055e1a97a6e7fb13f6e082818b1c36810e7e0753c2340cc28c8b",
+  "evaluation_dataset_version": "a4d58e1ef81b055e1a97a6e7fb13f6e082818b1c36810e7e0753c2340cc28c8b",
+  "group_split_verified": false,
+  "accuracy": 0.962915,
+  "macro_f1": 0.959396,
+  "ece_10_bins": 0.022638,
+  "accepted_coverage": 0.957059,
+  "accepted_accuracy": 0.978246,
+  "inference_p95_ms": 41.31,
+  "python": "3.12.10",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "git_commit": "5b9a8e0b3ba0bfadb48f501c18c3e15938241c23",
+  "git_dirty": true,
+  "files": {
+    "manifest": {
+      "file": "manifest.json",
+      "sha256": "c07dc1c9c0bf45ff22ff42f8a45646af0ce519ece540228b801dcc17bc8375ae"
+    },
+    "audit": {
+      "file": "audit.json",
+      "sha256": "6fe0ad90acdb519a2aaba764cbba54987b05fdf64e057165b362a91ca9b240de"
+    },
+    "evaluation": {
+      "file": "evaluation.json",
+      "sha256": "29105aa34e82867585e69756ebf1b8ee0966d07d751c47b064c744e3d8dd47f9"
+    },
+    "benchmark": {
+      "file": "benchmark.json",
+      "sha256": "e146c1858ddbfe1e85e8c58fba6212344a4a88e26e35eacb731ba8eb634eed78"
+    }
+  }
+}

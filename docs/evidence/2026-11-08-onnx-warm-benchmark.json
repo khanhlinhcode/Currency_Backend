@@ -1,0 +1,11 @@
+{
+  "model_version": "1.1.0",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "python": "3.11.16",
+  "runs": 100,
+  "mean_ms": 31.27,
+  "p50_ms": 28.83,
+  "p95_ms": 41.31,
+  "p99_ms": 55.86
+}
