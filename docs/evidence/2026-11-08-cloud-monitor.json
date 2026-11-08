@@ -1,0 +1,44 @@
+{
+  "checked_at": "2026-11-08T14:20:13.938414+00:00",
+  "url": "https://currency-ai-free-staging.onrender.com",
+  "checks": {
+    "ready": true,
+    "login": true,
+    "stats": true,
+    "model_info": true,
+    "mlops_runs": true
+  },
+  "ready_latency_ms": 207.5,
+  "model_version": "1.1.0",
+  "login_latency_ms": 1848.83,
+  "stats_latency_ms": 223.95,
+  "operational": {
+    "total_predictions": 0,
+    "suspicious_count": 0,
+    "reviewed_count": 0,
+    "reviewed_accuracy": null,
+    "inference_latency_sample_size": 0,
+    "inference_latency": {
+      "mean_ms": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null
+    },
+    "queue_latency": {
+      "mean_ms": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null
+    },
+    "processing_latency": {
+      "mean_ms": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null
+    }
+  },
+  "release_status": "candidate",
+  "dataset_version": "legacy-unversioned",
+  "archived_run_count": 1,
+  "healthy": true
+}

@@ -1,0 +1,42 @@
+{
+  "measured_at_date": "2026-11-08",
+  "backend_url": "https://currency-ai-free-staging.onrender.com",
+  "backend_deploy_commit_during_benchmarks": "5014d3c9",
+  "render_plan": "free",
+  "render_region": "singapore",
+  "cpu_limit": 0.1,
+  "memory_limit_mib": 512,
+  "database": "Supabase PostgreSQL session pooler",
+  "storage": "Supabase private S3-compatible bucket",
+  "model_version": "1.1.0",
+  "model_sha256": "737a0fcf1de09f8acf2f226e9ca54afc4a970f0738ae17dc135d146efda7487c",
+  "release_status": "candidate",
+  "client_platform": "macOS-27.0.1-arm64-arm-64bit",
+  "client_machine": "arm64",
+  "images": [
+    {
+      "label": "INR_10",
+      "bytes": 596281,
+      "sha256": "d0625b695db2294370d42a592b2c9ef3bc7741208fe57b58f0c2d598e1c48a81"
+    },
+    {
+      "label": "USA_1 Dollar",
+      "bytes": 445138,
+      "sha256": "4a00a4d7f857301a72cf48106bebf309633d46fd8735fed655b886a3a54bece6"
+    },
+    {
+      "label": "INR_500",
+      "bytes": 55973,
+      "sha256": "0eb5c89d1ae72be85943f9b7e372ebae3a81214827fea1034d9a9c6f8f6392cc"
+    }
+  ],
+  "warmups_per_profile": 10,
+  "measured_requests_per_profile": 100,
+  "concurrency_profiles": [
+    1,
+    4,
+    8
+  ],
+  "benchmark_traffic_tagged_and_purged": true,
+  "interpretation": "Warm, short staging measurements on three images; not an SLA or model-quality certification."
+}

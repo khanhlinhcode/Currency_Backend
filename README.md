@@ -30,7 +30,7 @@ The development defaults use SQLite and local image files. Copy `.env.example` i
 
 Exact commands and acceptance criteria are in the [staging runbook](docs/staging-runbook.md) and [production runbook](docs/production-runbook.md). The [validation report](docs/validation-report.md) contains measured results and known limits.
 
-The [free staging runbook](docs/free-staging-runbook.md) uses a checksum-pinned ONNX conversion on Render Free with an isolated external PostgreSQL database and private object storage. `render.free.yaml` and `Dockerfile.free` are a diagnostic demonstration path; they do not relax the model release gate. `scripts/archive_run.py` saves immutable audit/evaluation/benchmark run folders, `/mlops/runs` exposes their summaries to admins, and the scheduled staging monitor retains JSON snapshots in CI.
+The [free staging runbook](docs/free-staging-runbook.md) uses a checksum-pinned ONNX conversion on Render Free with isolated Supabase PostgreSQL and private object storage. The live [staging dashboard](https://currency-ai-free-dashboard.onrender.com) calls the [staging API](https://currency-ai-free-staging.onrender.com/ready). `render.free.yaml` describes the native Python service; `Dockerfile.free` supports local resource testing. This staging deployment does not relax the model release gate. `scripts/archive_run.py` saves immutable audit/evaluation/benchmark run folders, `/mlops/runs` exposes their summaries to admins, and the scheduled staging monitor retains JSON snapshots in CI.
 
 ## Deploy and verification
 

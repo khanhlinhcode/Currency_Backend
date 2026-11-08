@@ -18,6 +18,7 @@ results/
 !.env.example
 .ipynb_checkpoints/
 .DS_Store
+.playwright-cli/
 dataset/
 *.h5
 *.png

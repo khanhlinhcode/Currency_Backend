@@ -1,0 +1,49 @@
+{
+  "measured_at": "2026-11-08T14:10:55.136832+00:00",
+  "benchmark_run_id": "fde1692d-ce3e-4f22-b779-6f81898504b0",
+  "url": "https://currency-ai-free-staging.onrender.com/predict",
+  "runs": 100,
+  "warmups": 10,
+  "concurrency": 1,
+  "image_count": 3,
+  "unique_image_count": 3,
+  "image_bytes_min": 55973,
+  "image_bytes_max": 596281,
+  "warmup_errors": 0,
+  "successes": 100,
+  "errors": 0,
+  "success_rate": 1.0,
+  "status_counts": {
+    "200": 100
+  },
+  "error_examples": [],
+  "model_versions": [
+    "1.1.0"
+  ],
+  "wall_seconds": 74.496,
+  "throughput_rps": 1.342,
+  "latency_ms": {
+    "mean": 743.81,
+    "p50": 740.03,
+    "p95": 1054.37,
+    "p99": 1714.26
+  },
+  "server_processing_ms": {
+    "mean": 343.38,
+    "p50": 319.9,
+    "p95": 568.5,
+    "p99": 1255.4
+  },
+  "queue_ms": {
+    "mean": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "p99": 0.0
+  },
+  "inference_ms": {
+    "mean": 104.35,
+    "p50": 104.0,
+    "p95": 181.1,
+    "p99": 188.2
+  }
+}

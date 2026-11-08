@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-11-08T14:20:37.392227+00:00",
+  "render_services": [
+    {
+      "id": "srv-dbo7vr1srm7s73b793sg",
+      "name": "currency-ai-free-staging",
+      "type": "web_service",
+      "repo": "https://github.com/khanhlinhcode/Currency_Backend",
+      "branch": "main",
+      "auto_deploy_trigger": "checksPass",
+      "url": "https://currency-ai-free-staging.onrender.com",
+      "runtime": "python",
+      "plan": "free",
+      "region": "singapore"
+    },
+    {
+      "id": "srv-dbo1form8hqs73fa0lug",
+      "name": "currency-ai-free-dashboard",
+      "type": "static_site",
+      "repo": "https://github.com/khanhlinhcode/Currency_Frontend",
+      "branch": "main",
+      "auto_deploy_trigger": "checksPass",
+      "url": "https://currency-ai-free-dashboard.onrender.com",
+      "runtime": "static",
+      "plan": "free_static",
+      "region": "global"
+    }
+  ],
+  "supabase_project_ref": "tnymbcxgexxcjnpvfkej",
+  "supabase_region": "ap-southeast-1",
+  "private_bucket": "currency-ai-staging-private",
+  "backend_live_commit": "2aeb27bf68793dc114ad95a741072af45ad1d019",
+  "frontend_live_commit": "3f8d1a90",
+  "model_sha256": "737a0fcf1de09f8acf2f226e9ca54afc4a970f0738ae17dc135d146efda7487c"
+}

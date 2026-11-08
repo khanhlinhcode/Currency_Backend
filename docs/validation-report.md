@@ -68,6 +68,26 @@ The container was not OOM-killed; a post-run memory snapshot showed 484.5 MiB of
 
 The isolated Supabase project `currency-ai-staging` and private bucket `currency-ai-staging-private` were created in Singapore. The checksum-pinned ONNX file was uploaded under `staging/models/1.1.0/efficientnetb0_candidate.onnx`. This is staging infrastructure, not an approved production release.
 
-The backend commit `5b9a8e0b` and frontend commit `f48e32ca` passed their GitHub Actions CI workflows. The Render Free static dashboard was deployed at `https://currency-ai-free-dashboard.onrender.com`; both `/` and `/history` returned HTTP 200 with the SPA rewrite. The backend Blueprint still requires the database and administrator passwords to be entered by the project owner before deployment, so no cloud API or cloud performance result is claimed yet.
+The backend commit `5b9a8e0b` and frontend commit `f48e32ca` passed their GitHub Actions CI workflows. The Render Free static dashboard was deployed at `https://currency-ai-free-dashboard.onrender.com`; both `/` and `/history` returned HTTP 200 with the SPA rewrite. Cloud API and latency findings from the subsequent deployment are recorded below.
 
 Tracked reports: [dataset audit](evidence/2026-11-08-dataset-audit-summary.json), [ONNX evaluation](evidence/2026-11-08-onnx-evaluation.json), [same-input parity](evidence/2026-11-08-onnx-parity.json), [warm ONNX benchmark](evidence/2026-11-08-onnx-warm-benchmark.json), [diagnostic run record](evidence/2026-11-08-diagnostic-run.json), local Free-profile HTTP results at [concurrency 1](evidence/2026-11-08-free-local-c1.json), [4](evidence/2026-11-08-free-local-c4.json) and [8](evidence/2026-11-08-free-local-c8.json).
+
+## Cloud staging results (2026-11-08)
+
+The Render Free backend is live at `https://currency-ai-free-staging.onrender.com` and the static dashboard at `https://currency-ai-free-dashboard.onrender.com`. PostgreSQL uses the isolated Supabase project through its IPv4 session pooler; the model and uploaded images are in the private Storage bucket. The ONNX artifact was downloaded from Storage and its SHA-256 matched the pinned manifest. The backend is using Python 3.11, 0.1 CPU and 512 MiB in Singapore. The candidate remains blocked for production.
+
+The cloud smoke check passed readiness, admin login, model metadata, operational statistics, archived MLOps runs, analyst user visibility, an authenticated prediction, private image retrieval through a five-minute signed API link, history, human review and deletion. During the review check, reviewed accuracy became 100% for that one labelled record, then returned to no reviewed records after cleanup; this is an operational workflow check, not a model quality estimate. A valid unauthenticated multipart prediction returned HTTP 401. Browser checks confirmed login, dashboard, model/run metadata and user administration; the deployed login no longer shows demo credentials. A Supabase S3 presigned GET returned HTTP 403, so private history images are served by the signed API route instead.
+
+Three distinct JPEGs (56–596 KB), ten warmups and 100 measured HTTP requests per profile were sent from the local macOS client to the live Render/Supabase staging stack. Benchmark requests were tagged, excluded from operational statistics, and all 330 benchmark records and images were removed afterward.
+
+| Concurrent requests | Successes | Throughput | Client p95 | Client p99 | Queue p95 | Inference p95 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 100/100 | 1.342 req/s | 1.05 s | 1.71 s | 0 ms | 181 ms |
+| 4 | 100/100 | 2.526 req/s | 2.11 s | 4.38 s | 289 ms | 410 ms |
+| 8 | 100/100 | 2.566 req/s | 5.18 s | 5.87 s | 1,207 ms | 598 ms |
+
+These are warm, short runs on three images, not an SLA or a representative production workload. The local AMD64-emulated Free-profile figures above were much slower than the native Render deployment and must not be used as cloud estimates. An idle cold-start measurement and longer representative traffic remain necessary before promising availability or latency.
+
+The `20261108T063700Z-onnx-diagnostic` training/evaluation record was archived immutably under `staging/runs/` and appears in the admin MLOps dashboard. The daily GitHub Actions staging monitor was configured with encrypted credentials and passed its manually triggered run. After benchmark cleanup, the monitor reported zero operational predictions, one archived run and all probes healthy. Backend CI at `2aeb27bf` and frontend CI at `3f8d1a90` passed.
+
+Cloud evidence: [deployment snapshot](evidence/2026-11-08-deployment-snapshot.json), [benchmark context](evidence/2026-11-08-cloud-benchmark-context.json), [concurrency 1](evidence/2026-11-08-free-cloud-c1.json), [4](evidence/2026-11-08-free-cloud-c4.json), [8](evidence/2026-11-08-free-cloud-c8.json), [smoke checks](evidence/2026-11-08-cloud-smoke.json), [monitor snapshot](evidence/2026-11-08-cloud-monitor.json).
