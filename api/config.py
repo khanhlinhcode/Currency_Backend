@@ -7,6 +7,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 ENVIRONMENT = os.getenv("APP_ENV", "development").lower()
 if ENVIRONMENT not in {"development", "staging", "production"}:
     raise RuntimeError("APP_ENV must be development, staging or production")
+SECRET_KEY = os.getenv("SECRET_KEY", "development-only-secret-change-before-production")
 MODEL_PATH = Path(os.getenv("MODEL_PATH", str(BASE_DIR / "models/efficientnetb0_best.keras")))
 MODEL_MANIFEST_PATH = Path(os.getenv("MODEL_MANIFEST_PATH", str(BASE_DIR / "models/model-manifest.json")))
 MODEL_URL = os.getenv("MODEL_URL", "")

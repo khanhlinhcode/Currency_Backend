@@ -1,10 +1,8 @@
-import os
 from datetime import datetime, timedelta, timezone
 from jose import jwt
 
-from .config import ENVIRONMENT
+from .config import ENVIRONMENT, SECRET_KEY
 
-SECRET_KEY = os.getenv("SECRET_KEY", "development-only-secret-change-before-production")
 if ENVIRONMENT in {"staging", "production"} and len(SECRET_KEY) < 32:
     raise RuntimeError("SECRET_KEY must contain at least 32 characters")
 ALGORITHM = "HS256"

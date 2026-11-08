@@ -8,10 +8,9 @@ from functools import lru_cache
 from urllib.parse import quote
 from botocore.config import Config
 
-from .auth import SECRET_KEY
 from .config import (
     ENVIRONMENT, S3_ACCESS_KEY_ID, S3_BUCKET, S3_ENDPOINT_URL, S3_REGION,
-    S3_SECRET_ACCESS_KEY, STORAGE_BACKEND, UPLOAD_DIR,
+    S3_SECRET_ACCESS_KEY, SECRET_KEY, STORAGE_BACKEND, UPLOAD_DIR,
 )
 
 
