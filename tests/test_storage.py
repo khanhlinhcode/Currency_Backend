@@ -1,4 +1,5 @@
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 from botocore.exceptions import ClientError
 from moto import mock_aws
@@ -49,14 +50,21 @@ class StorageTest(unittest.TestCase):
                 client = storage._s3_client()
                 client.create_bucket(Bucket="currency-test")
 
-                storage.save_image("predictions/test.jpg", b"jpeg-data")
-                content = client.get_object(Bucket="currency-test", Key="predictions/test.jpg")["Body"].read()
+                image_key = "predictions/00000000-0000-4000-8000-000000000001.jpg"
+                storage.save_image(image_key, b"jpeg-data")
+                content = client.get_object(Bucket="currency-test", Key=image_key)["Body"].read()
                 self.assertEqual(content, b"jpeg-data")
-                self.assertIn("Signature=", storage.image_url("predictions/test.jpg"))
+                signed = urlsplit(storage.image_url(image_key))
+                self.assertEqual(signed.path, "/images/" + image_key)
+                params = parse_qs(signed.query)
+                expires, signature = int(params["expires"][0]), params["signature"][0]
+                self.assertTrue(storage.valid_image_signature(image_key, expires, signature))
+                self.assertFalse(storage.valid_image_signature(image_key, expires - 301, signature))
+                self.assertFalse(storage.valid_image_signature("predictions/other.jpg", expires, signature))
 
-                storage.delete_image("predictions/test.jpg")
+                storage.delete_image(image_key)
                 with self.assertRaises(ClientError):
-                    client.get_object(Bucket="currency-test", Key="predictions/test.jpg")
+                    client.get_object(Bucket="currency-test", Key=image_key)
         finally:
             (
                 storage.STORAGE_BACKEND, storage.S3_BUCKET,

@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from botocore.exceptions import ClientError
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -30,7 +31,7 @@ from .models import PredictionHistory, User
 from .schemas import PredictionResponse, PredictionReview, UserCreate, UserOut, UserUpdate
 from .security import hash_password, verify_password
 from .users import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME
-from .storage import delete_image, image_url as stored_image_url, save_image
+from .storage import _s3_client, delete_image, image_url as stored_image_url, save_image, valid_image_signature
 
 
 # =====================================================
@@ -102,6 +103,33 @@ app.add_middleware(
 # =====================================================
 model = load_model()
 inference_slots = asyncio.Semaphore(INFERENCE_CONCURRENCY)
+
+
+@app.get("/images/{image_key:path}")
+def get_private_image(image_key: str, expires: int, signature: str):
+    """Serve one stored prediction image through a short-lived signed API URL."""
+    if STORAGE_BACKEND != "s3" or not valid_image_signature(image_key, expires, signature):
+        raise HTTPException(status_code=403, detail="Invalid or expired image URL")
+    from .config import S3_BUCKET
+
+    try:
+        stored = _s3_client().get_object(Bucket=S3_BUCKET, Key=image_key)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+            raise HTTPException(status_code=404, detail="Image not found") from error
+        raise
+
+    def chunks():
+        body = stored["Body"]
+        try:
+            yield from body.iter_chunks(chunk_size=65536)
+        finally:
+            body.close()
+
+    return StreamingResponse(
+        chunks(), media_type=stored.get("ContentType") or "image/jpeg",
+        headers={"Cache-Control": "private, max-age=60"},
+    )
 
 
 # =====================================================

@@ -1,8 +1,14 @@
 """Private S3 compatible storage in production; local files for development."""
 
+import hashlib
+import hmac
+import re
+import time
 from functools import lru_cache
+from urllib.parse import quote
 from botocore.config import Config
 
+from .auth import SECRET_KEY
 from .config import (
     ENVIRONMENT, S3_ACCESS_KEY_ID, S3_BUCKET, S3_ENDPOINT_URL, S3_REGION,
     S3_SECRET_ACCESS_KEY, STORAGE_BACKEND, UPLOAD_DIR,
@@ -43,7 +49,21 @@ def delete_image(key: str):
 
 def image_url(key: str):
     if STORAGE_BACKEND == "s3":
-        return _s3_client().generate_presigned_url(
-            "get_object", Params={"Bucket": S3_BUCKET, "Key": key}, ExpiresIn=300
-        )
+        expires = int(time.time()) + 300
+        signature = _image_signature(key, expires)
+        return f"/images/{quote(key, safe='/')}?expires={expires}&signature={signature}"
     return f"/uploads/{key}"
+
+
+def _image_signature(key: str, expires: int):
+    message = f"{key}\n{expires}".encode()
+    return hmac.new(SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()
+
+
+def valid_image_signature(key: str, expires: int, signature: str):
+    if not re.fullmatch(r"predictions/[0-9a-f-]{36}\.jpg", key):
+        return False
+    now = int(time.time())
+    if expires < now or expires > now + 300:
+        return False
+    return hmac.compare_digest(_image_signature(key, expires), signature)
