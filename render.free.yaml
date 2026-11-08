@@ -2,19 +2,22 @@
 services:
   - type: web
     name: currency-ai-free-staging
-    runtime: docker
+    runtime: python
     plan: free
     region: singapore
-    dockerfilePath: ./Dockerfile.free
+    buildCommand: pip install -r requirements-api-free.txt
+    startCommand: sh -c 'python -m alembic upgrade head && exec python -m uvicorn api.main:app --host 0.0.0.0 --port $PORT'
     healthCheckPath: /ready
     autoDeployTrigger: checksPass
     envVars:
+      - key: PYTHON_VERSION
+        value: '3.11.11'
       - key: APP_ENV
         value: staging
       - key: MODEL_PATH
-        value: /app/models/efficientnetb0_candidate.onnx
+        value: models/efficientnetb0_candidate.onnx
       - key: MODEL_MANIFEST_PATH
-        value: /app/models/edge-manifest.json
+        value: models/edge-manifest.json
       - key: MODEL_S3_KEY
         value: staging/models/1.1.0/efficientnetb0_candidate.onnx
       - key: DATABASE_URL

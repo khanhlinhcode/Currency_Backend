@@ -4,7 +4,7 @@ This is a **demonstration staging environment**, not a production SLA. The curre
 
 ## Architecture and limits
 
-- Render Free web service (`render.free.yaml`): 0.1 CPU, 512 MB RAM. It sleeps after 15 minutes idle and wakes on request; cold start can take about a minute. Its disk is ephemeral. The ONNX Runtime variant avoids importing TensorFlow into the serving process.
+- Render Free Python web service (`render.free.yaml`): 0.1 CPU, 512 MB RAM. It sleeps after 15 minutes idle and wakes on request; cold start can take about a minute. Its disk is ephemeral. The ONNX Runtime variant avoids importing TensorFlow into the serving process. `Dockerfile.free` is retained for portable local resource testing.
 - Render free static site (`currency-frontend/render.free.yaml`): React dashboard, history review, user administration and MLOps run summaries.
 - Supabase Free: an isolated PostgreSQL project (500 MB database) and private S3-compatible Storage bucket (1 GB). Free projects pause after inactivity. Keep staging records and model artifacts within quota; choose a paid plan for a public production service.
 
