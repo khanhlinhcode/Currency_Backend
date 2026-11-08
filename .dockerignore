@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+dataset
+results
+api/uploads
+currency_ai.db
+models/*.keras
+models/*.h5
+models/**/*.keras
+models/**/*.onnx
+models/**/*.h5
+__pycache__
+*.pyc
+*.log
+.DS_Store

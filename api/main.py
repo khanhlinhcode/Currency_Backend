@@ -1,4 +1,5 @@
 import csv
+import asyncio
 import io
 import json
 import logging
@@ -6,34 +7,37 @@ import math
 import time
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from PIL import Image
-from sqlalchemy import func, inspect, or_, text
+from sqlalchemy import Integer, and_, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import create_access_token
-from .config import CONFIDENCE_THRESHOLD
-from .database import Base, SessionLocal, engine
+from .config import CONFIDENCE_THRESHOLD, CORS_ORIGINS, ENVIRONMENT, INFERENCE_CONCURRENCY, STORAGE_BACKEND, UPLOAD_DIR, validate_production_config
+from .database import SessionLocal, engine
 from .dependencies import get_current_user, get_optional_current_user
-from .inference import CLASS_NAMES, CURRENCY_VALUE, preprocess_image
+from .inference import CLASS_NAMES, CURRENCY_VALUE, MODEL_MANIFEST, MODEL_VERSION, preprocess_image
 from .model_loader import load_model
 from .models import PredictionHistory, User
-from .schemas import PredictionResponse, UserCreate, UserOut, UserUpdate
+from .schemas import PredictionResponse, PredictionReview, UserCreate, UserOut, UserUpdate
 from .security import hash_password, verify_password
 from .users import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME
+from .storage import delete_image, image_url as stored_image_url, save_image
 
 
 # =====================================================
 # CONSTANTS
 # =====================================================
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+Image.MAX_IMAGE_PIXELS = 20_000_000
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 100
 ALLOWED_ROLES = {"admin", "analyst"}
@@ -47,58 +51,9 @@ logger = logging.getLogger("currency_ai")
 
 
 # =====================================================
-# CREATE DATABASE TABLES + LIGHT MIGRATION
+# DATABASE SCHEMA IS MANAGED BY ALEMBIC
 # =====================================================
-Base.metadata.create_all(bind=engine)
-
-
-def migrate_schema():
-    inspector = inspect(engine)
-    table_names = set(inspector.get_table_names())
-
-    with engine.begin() as connection:
-        if "prediction_history" in table_names:
-            columns = {col["name"] for col in inspector.get_columns("prediction_history")}
-            if "image_path" not in columns:
-                connection.execute(
-                    text("ALTER TABLE prediction_history ADD COLUMN image_path VARCHAR")
-                )
-            if "top3_json" not in columns:
-                connection.execute(
-                    text("ALTER TABLE prediction_history ADD COLUMN top3_json VARCHAR")
-                )
-            if "requested_by" not in columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE prediction_history ADD COLUMN requested_by VARCHAR DEFAULT 'guest'"
-                    )
-                )
-            if "currency_category" not in columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE prediction_history ADD COLUMN currency_category VARCHAR DEFAULT 'unknown'"
-                    )
-                )
-
-        if "users" in table_names:
-            columns = {col["name"] for col in inspector.get_columns("users")}
-            if "role" not in columns:
-                connection.execute(
-                    text("ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'analyst'")
-                )
-            connection.execute(
-                text(
-                    "UPDATE users "
-                    "SET role = CASE WHEN is_admin = 1 THEN 'admin' ELSE 'analyst' END "
-                    "WHERE role IS NULL OR role = ''"
-                )
-            )
-            connection.execute(
-                text("UPDATE users SET is_admin = CASE WHEN role = 'admin' THEN 1 ELSE 0 END")
-            )
-
-
-migrate_schema()
+validate_production_config()
 
 
 # =====================================================
@@ -106,9 +61,28 @@ migrate_schema()
 # =====================================================
 app = FastAPI(
     title="Currency AI Recognition System",
-    version="1.2.0",
-    description="AI-powered currency recognition API using EfficientNetV2B0",
+    version="2.0.0",
+    description="AI-powered currency recognition API with versioned model releases",
 )
+
+
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("http_request_failed request_id=%s path=%s", request_id, request.url.path)
+        raise
+    response.headers["X-Request-ID"] = request_id
+    if request.url.path not in {"/health", "/ready"}:
+        logger.info(
+            "http_request request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
+            request_id, request.method, request.url.path, response.status_code,
+            (time.perf_counter() - started) * 1000,
+        )
+    return response
 
 
 # =====================================================
@@ -116,7 +90,7 @@ app = FastAPI(
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -127,14 +101,15 @@ app.add_middleware(
 # LOAD MODEL ONCE
 # =====================================================
 model = load_model()
+inference_slots = asyncio.Semaphore(INFERENCE_CONCURRENCY)
 
 
 # =====================================================
 # UPLOAD DIRECTORY + STATIC MOUNT
 # =====================================================
-UPLOAD_DIR = Path("api/uploads")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+if STORAGE_BACKEND == "local" and ENVIRONMENT == "development":
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 # =====================================================
@@ -150,6 +125,11 @@ def get_db():
 
 def normalize_username(username: str) -> str:
     return username.strip().lower()
+
+
+def safe_csv_cell(value):
+    text_value = str(value or "")
+    return "'" + text_value if text_value.lstrip().startswith(("=", "+", "-", "@")) else text_value
 
 
 def normalize_role(role: str) -> str:
@@ -186,7 +166,7 @@ def parse_top3(top3_json: Optional[str]):
 
 
 def serialize_history_record(record: PredictionHistory):
-    image_url = f"/uploads/{record.image_path}" if record.image_path else None
+    image_url = stored_image_url(record.image_path) if record.image_path else None
     top3 = parse_top3(record.top3_json)
 
     return {
@@ -199,6 +179,13 @@ def serialize_history_record(record: PredictionHistory):
         "suspicious": record.suspicious,
         "estimated_value": record.estimated_value,
         "inference_time": record.inference_time,
+        "queue_time": record.queue_time,
+        "processing_time": record.processing_time,
+        "model_version": record.model_version,
+        "legacy_unverified": record.model_version != MODEL_VERSION,
+        "actual_label": record.actual_label,
+        "reviewed_by": record.reviewed_by,
+        "reviewed_at": record.reviewed_at,
         "requested_by": record.requested_by,
         "currency_category": record.currency_category,
         "created_at": record.created_at,
@@ -293,14 +280,12 @@ def ensure_default_admin():
                     is_active=True,
                 )
             )
-        else:
-            # Dev convenience: keep default admin always usable for demo/login recovery.
-            existing_admin.hashed_password = hash_password(DEFAULT_ADMIN_PASSWORD)
-            existing_admin.role = "admin"
-            existing_admin.is_admin = True
-            existing_admin.is_active = True
-
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if not db.query(User).filter(User.username == admin_username).first():
+                raise
     finally:
         db.close()
 
@@ -344,6 +329,17 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/ready")
+def ready():
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+        return {"status": "ready", "model_version": MODEL_VERSION}
+    except Exception as error:
+        logger.exception("readiness_failed")
+        raise HTTPException(status_code=503, detail="Service not ready") from error
 
 
 # =====================================================
@@ -503,32 +499,69 @@ def delete_user(
 @app.get("/model-info")
 def model_info(_current_user: User = Depends(get_current_user_record)):
     return {
-        "model_name": "EfficientNetV2B0 Transfer Learning",
-        "architecture": "EfficientNetV2B0 backbone + Dense classifier head",
-        "framework": "TensorFlow / Keras",
-        "dataset_size": 18000,
+        "model_name": MODEL_MANIFEST["architecture"],
+        "model_version": MODEL_VERSION,
+        "release_status": MODEL_MANIFEST.get("release_status"),
+        "architecture": MODEL_MANIFEST["architecture"],
+        "framework": MODEL_MANIFEST["framework"],
+        "dataset_version": MODEL_MANIFEST["dataset_version"],
+        "test_metrics": MODEL_MANIFEST.get("test_metrics"),
         "num_classes": len(CLASS_NAMES),
         "classes": CLASS_NAMES,
+        "input_size": "x".join(str(value) for value in MODEL_MANIFEST["input_size"]),
         "confidence_threshold": CONFIDENCE_THRESHOLD,
-        "training_accuracy": "97.4%",
-        "last_training_date": "2026-02-10",
     }
 
+
+@app.get("/mlops/runs")
+def model_runs(_current_admin: User = Depends(get_current_admin)):
+    """Read archived run summaries; model training reports stay private."""
+    if STORAGE_BACKEND != "s3":
+        return {"runs": []}
+    from .storage import _s3_client
+    from .config import S3_BUCKET
+
+    client = _s3_client()
+    prefix = "staging/runs/" if ENVIRONMENT == "staging" else "production/runs/"
+    keys = [item["Key"] for page in client.get_paginator("list_objects_v2").paginate(Bucket=S3_BUCKET, Prefix=prefix)
+            for item in page.get("Contents", []) if item["Key"].endswith("/run.json")]
+    summaries = []
+    for key in sorted(keys, reverse=True)[:20]:
+        report = json.loads(client.get_object(Bucket=S3_BUCKET, Key=key)["Body"].read())
+        summaries.append({field: report.get(field) for field in (
+            "run_id", "status", "recorded_at", "model_version", "dataset_version",
+            "group_split_verified", "accuracy", "macro_f1", "ece_10_bins",
+            "inference_p95_ms", "git_commit",
+        )})
+    return {"runs": summaries}
 
 # =====================================================
 # PREDICT (PUBLIC)
 # =====================================================
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(
+    request: Request,
     file: UploadFile = File(...),
     current_username: Optional[str] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    if not file.content_type or not file.content_type.startswith("image"):
-        raise HTTPException(status_code=400, detail="File must be an image")
+    request_started = time.perf_counter()
+    if ENVIRONMENT == "staging":
+        staging_user = db.query(User).filter(User.username == normalize_username(current_username or "")).first()
+        if staging_user is None or not staging_user.is_active:
+            raise HTTPException(status_code=401, detail="Staging predictions require an active login")
+    requested_by = normalize_username(current_username) if current_username else "guest"
+    benchmark_run = request.headers.get("X-Benchmark-Run")
+    if benchmark_run and ENVIRONMENT == "staging":
+        try:
+            requested_by = f"benchmark:{uuid.UUID(benchmark_run)}"
+        except ValueError as parse_error:
+            raise HTTPException(status_code=400, detail="Invalid benchmark run ID") from parse_error
+    if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG and WebP images are supported")
 
     try:
-        contents = await file.read()
+        contents = await file.read(MAX_UPLOAD_SIZE_BYTES + 1)
     except Exception as read_error:
         raise HTTPException(status_code=400, detail="Unable to read upload file") from read_error
 
@@ -536,26 +569,26 @@ async def predict(
         raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
 
     try:
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        opened_image = Image.open(io.BytesIO(contents))
+        if opened_image.width * opened_image.height > Image.MAX_IMAGE_PIXELS:
+            raise ValueError("Image dimensions exceed limit")
+        image = opened_image.convert("RGB")
     except Exception as image_error:
         raise HTTPException(status_code=400, detail="Invalid image file") from image_error
 
-    file_id = str(uuid.uuid4())
-    image_filename = f"{file_id}.jpg"
-    image_path = UPLOAD_DIR / image_filename
-    with open(image_path, "wb") as image_file:
-        image_file.write(contents)
+    processed = await run_in_threadpool(preprocess_image, image)
 
-    processed = preprocess_image(image)
-
-    start_time = time.time()
-    preds = model.predict(processed, verbose=0)[0]
-    inference_time = round(time.time() - start_time, 4)
+    queued_at = time.perf_counter()
+    async with inference_slots:
+        queue_time = round(time.perf_counter() - queued_at, 4)
+        start_time = time.perf_counter()
+        preds = (await run_in_threadpool(model.predict, processed, verbose=0))[0]
+        inference_time = round(time.perf_counter() - start_time, 4)
 
     top3_idx = preds.argsort()[-3:][::-1]
     best_idx = int(top3_idx[0])
 
-    if best_idx >= len(CLASS_NAMES):
+    if len(preds) != len(CLASS_NAMES):
         raise HTTPException(status_code=500, detail="Model class index mismatch")
 
     predicted_class = CLASS_NAMES[best_idx]
@@ -570,7 +603,6 @@ async def predict(
         for index in top3_idx
     ]
     currency_category = infer_currency_category(predicted_class)
-    requested_by = normalize_username(current_username) if current_username else "guest"
 
     result = {
         "prediction": predicted_class,
@@ -578,11 +610,19 @@ async def predict(
         "suspicious": suspicious,
         "estimated_value": CURRENCY_VALUE.get(predicted_class, 0),
         "inference_time": inference_time,
+        "queue_time": queue_time,
+        "processing_time": 0.0,
+        "model_version": MODEL_VERSION,
         "top3": top3,
     }
 
+    image_filename = f"predictions/{uuid.uuid4()}.jpg"
+    image_buffer = io.BytesIO()
+    await run_in_threadpool(image.save, image_buffer, "JPEG", quality=88)
+    save_image(image_filename, image_buffer.getvalue())
+
     record = PredictionHistory(
-        filename=file.filename,
+        filename=(file.filename or "upload").replace("\\", "/").rsplit("/", 1)[-1][:255],
         image_path=image_filename,
         prediction=predicted_class,
         top3_json=json.dumps(top3),
@@ -590,21 +630,38 @@ async def predict(
         suspicious=suspicious,
         estimated_value=CURRENCY_VALUE.get(predicted_class, 0),
         inference_time=inference_time,
+        queue_time=queue_time,
+        model_version=MODEL_VERSION,
         requested_by=requested_by,
         currency_category=currency_category,
         created_at=datetime.utcnow(),
     )
 
-    db.add(record)
-    db.commit()
+    try:
+        db.add(record)
+        db.flush()
+        record.processing_time = round(time.perf_counter() - request_started, 4)
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            delete_image(image_filename)
+        except Exception:
+            logger.exception("orphaned_image_cleanup_failed key=%s", image_filename)
+        raise
+
+    result["processing_time"] = record.processing_time
 
     logger.info(
-        "prediction_event user=%s filename=%s prediction=%s confidence=%.4f suspicious=%s",
+        "prediction_event user=%s prediction=%s confidence=%.4f review_required=%s model=%s queue_s=%.4f inference_s=%.4f processing_s=%.4f",
         requested_by,
-        file.filename,
         predicted_class,
         confidence,
         suspicious,
+        MODEL_VERSION,
+        queue_time,
+        inference_time,
+        record.processing_time,
     )
 
     return result
@@ -623,9 +680,9 @@ def export_history(
     _current_user: User = Depends(get_current_user_record),
     db: Session = Depends(get_db),
 ):
-    query = db.query(PredictionHistory)
+    query = db.query(PredictionHistory).filter(PredictionHistory.requested_by.notlike("benchmark:%"))
     query = apply_history_filters(query, search, suspicious, currency, date_from, date_to)
-    records = query.order_by(PredictionHistory.created_at.desc()).all()
+    records = query.order_by(PredictionHistory.created_at.desc()).limit(10000).all()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -648,13 +705,13 @@ def export_history(
         writer.writerow(
             [
                 record.id,
-                record.filename,
+                safe_csv_cell(record.filename),
                 record.prediction,
                 record.confidence,
                 record.suspicious,
                 record.estimated_value,
                 record.inference_time,
-                record.requested_by,
+                safe_csv_cell(record.requested_by),
                 record.currency_category,
                 record.created_at.isoformat() if record.created_at else "",
             ]
@@ -684,7 +741,7 @@ def history(
     _current_user: User = Depends(get_current_user_record),
     db: Session = Depends(get_db),
 ):
-    query = db.query(PredictionHistory)
+    query = db.query(PredictionHistory).filter(PredictionHistory.requested_by.notlike("benchmark:%"))
     query = apply_history_filters(query, search, suspicious, currency, date_from, date_to)
 
     total = query.count()
@@ -721,6 +778,42 @@ def history_detail(
     return serialize_history_record(record)
 
 
+@app.post("/history/{record_id}/review")
+def review_prediction(
+    record_id: int,
+    payload: PredictionReview,
+    current_user: User = Depends(get_current_user_record),
+    db: Session = Depends(get_db),
+):
+    label = payload.actual_label.strip()
+    if label not in CLASS_NAMES and label != "unknown":
+        raise HTTPException(status_code=400, detail="Actual label is not in model classes")
+    record = db.query(PredictionHistory).filter(PredictionHistory.id == record_id).first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="History record not found")
+    record.actual_label = label
+    record.reviewed_by = current_user.username
+    record.reviewed_at = datetime.utcnow()
+    db.commit()
+    return serialize_history_record(record)
+
+
+@app.delete("/history/{record_id}")
+def delete_history_record(
+    record_id: int,
+    _current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    record = db.query(PredictionHistory).filter(PredictionHistory.id == record_id).first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="History record not found")
+    if record.image_path:
+        delete_image(record.image_path)
+    db.delete(record)
+    db.commit()
+    return {"message": "History record deleted"}
+
+
 # =====================================================
 # STATS (PROTECTED)
 # =====================================================
@@ -729,69 +822,78 @@ def stats(
     _current_user: User = Depends(get_current_user_record),
     db: Session = Depends(get_db),
 ):
-    records = db.query(PredictionHistory).order_by(PredictionHistory.created_at.asc()).all()
+    operational_records = PredictionHistory.requested_by.notlike("benchmark:%")
+    current_records = and_(PredictionHistory.model_version == MODEL_VERSION, operational_records)
+    total_predictions = db.query(func.count(PredictionHistory.id)).filter(current_records).scalar() or 0
+    legacy_predictions = (db.query(func.count(PredictionHistory.id)).filter(operational_records).scalar() or 0) - total_predictions
+    suspicious_count = (
+        db.query(func.count(PredictionHistory.id))
+        .filter(current_records, PredictionHistory.suspicious.is_(True)).scalar() or 0
+    )
+    currency_distribution = dict(
+        db.query(PredictionHistory.prediction, func.count(PredictionHistory.id))
+        .filter(current_records)
+        .group_by(PredictionHistory.prediction).all()
+    )
+    country_distribution = dict(
+        db.query(PredictionHistory.currency_category, func.count(PredictionHistory.id))
+        .filter(current_records)
+        .group_by(PredictionHistory.currency_category).all()
+    )
+    daily_rows = (
+        db.query(func.date(PredictionHistory.created_at), func.count(PredictionHistory.id))
+        .filter(current_records, PredictionHistory.created_at >= datetime.utcnow() - timedelta(days=90))
+        .group_by(func.date(PredictionHistory.created_at))
+        .order_by(func.date(PredictionHistory.created_at)).all()
+    )
+    suspicious_daily = dict(
+        db.query(func.date(PredictionHistory.created_at), func.count(PredictionHistory.id))
+        .filter(current_records, PredictionHistory.created_at >= datetime.utcnow() - timedelta(days=90))
+        .filter(PredictionHistory.suspicious.is_(True))
+        .group_by(func.date(PredictionHistory.created_at)).all()
+    )
+    recent = (
+        db.query(PredictionHistory.inference_time, PredictionHistory.queue_time, PredictionHistory.processing_time)
+        .filter(current_records)
+        .order_by(PredictionHistory.id.desc()).limit(1000).all()
+    )
 
-    if not records:
+    def summarize_latency(values):
+        ordered = sorted(round(value * 1000, 2) for value in values if value is not None)
+        if not ordered:
+            return {"mean_ms": None, "p50_ms": None, "p95_ms": None, "p99_ms": None}
         return {
-            "total_predictions": 0,
-            "total_estimated_value": 0,
-            "suspicious_count": 0,
-            "detected_currencies_count": 0,
-            "currency_distribution": {},
-            "country_distribution": {},
-            "predictions_per_day": [],
-            "suspicious_trend": [],
+            "mean_ms": round(sum(ordered) / len(ordered), 2),
+            "p50_ms": ordered[math.ceil(0.50 * len(ordered)) - 1],
+            "p95_ms": ordered[math.ceil(0.95 * len(ordered)) - 1],
+            "p99_ms": ordered[math.ceil(0.99 * len(ordered)) - 1],
         }
 
-    total_predictions = len(records)
-    total_estimated_value = sum(record.estimated_value for record in records)
-    suspicious_count = sum(1 for record in records if record.suspicious)
-
-    currency_distribution = {}
-    country_distribution = {}
-    predictions_per_day = {}
-    suspicious_per_day = {}
-
-    for record in records:
-        currency_distribution[record.prediction] = (
-            currency_distribution.get(record.prediction, 0) + 1
-        )
-
-        category = infer_currency_category(record.prediction)
-        if category == "vietnam":
-            country = "Vietnam"
-        elif category == "usa":
-            country = "USA"
-        elif category == "india":
-            country = "India"
-        else:
-            country = category.capitalize()
-
-        country_distribution[country] = country_distribution.get(country, 0) + 1
-
-        day_key = record.created_at.date().isoformat() if record.created_at else "unknown"
-        predictions_per_day[day_key] = predictions_per_day.get(day_key, 0) + 1
-
-        if record.suspicious:
-            suspicious_per_day[day_key] = suspicious_per_day.get(day_key, 0) + 1
-
-    prediction_series = [
-        {"date": date_key, "count": predictions_per_day[date_key]}
-        for date_key in sorted(predictions_per_day.keys())
-    ]
-
-    suspicious_series = [
-        {"date": date_key, "count": suspicious_per_day.get(date_key, 0)}
-        for date_key in sorted(predictions_per_day.keys())
-    ]
+    reviewed_count, reviewed_correct = db.query(
+        func.count(PredictionHistory.id),
+        func.sum(func.cast(PredictionHistory.actual_label == PredictionHistory.prediction, Integer)),
+    ).filter(
+        PredictionHistory.actual_label.is_not(None),
+        current_records,
+    ).one()
+    reviewed_count = reviewed_count or 0
+    reviewed_correct = reviewed_correct or 0
 
     return {
         "total_predictions": total_predictions,
-        "total_estimated_value": total_estimated_value,
+        "legacy_predictions": legacy_predictions,
         "suspicious_count": suspicious_count,
         "detected_currencies_count": len(currency_distribution),
         "currency_distribution": currency_distribution,
         "country_distribution": country_distribution,
-        "predictions_per_day": prediction_series,
-        "suspicious_trend": suspicious_series,
+        "predictions_per_day": [{"date": str(day), "count": count} for day, count in daily_rows],
+        "suspicious_trend": [{"date": str(day), "count": suspicious_daily.get(day, 0)} for day, _ in daily_rows],
+        "model_version": MODEL_VERSION,
+        "latency_sample_size": len(recent),
+        "inference_latency_sample_size": sum(row[1] is not None for row in recent),
+        "inference_latency": summarize_latency([row[0] for row in recent if row[1] is not None]),
+        "queue_latency": summarize_latency([row[1] for row in recent]),
+        "processing_latency": summarize_latency([row[2] for row in recent]),
+        "reviewed_count": reviewed_count,
+        "reviewed_accuracy": round(reviewed_correct / reviewed_count, 4) if reviewed_count else None,
     }

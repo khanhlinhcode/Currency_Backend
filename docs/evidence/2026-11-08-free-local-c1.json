@@ -1,0 +1,49 @@
+{
+  "measured_at": "2026-11-08T06:29:16.028179+00:00",
+  "benchmark_run_id": "ab459731-3d66-43bd-9947-1d25a02fc127",
+  "url": "http://127.0.0.1:8123/predict",
+  "runs": 100,
+  "warmups": 10,
+  "concurrency": 1,
+  "image_count": 3,
+  "unique_image_count": 3,
+  "image_bytes_min": 55973,
+  "image_bytes_max": 596281,
+  "warmup_errors": 0,
+  "successes": 100,
+  "errors": 0,
+  "success_rate": 1.0,
+  "status_counts": {
+    "200": 100
+  },
+  "error_examples": [],
+  "model_versions": [
+    "1.1.0"
+  ],
+  "wall_seconds": 338.803,
+  "throughput_rps": 0.295,
+  "latency_ms": {
+    "mean": 3386.43,
+    "p50": 3207.07,
+    "p95": 4699.21,
+    "p99": 5599.71
+  },
+  "server_processing_ms": {
+    "mean": 3041.81,
+    "p50": 2996.3,
+    "p95": 4306.5,
+    "p99": 5101.0
+  },
+  "queue_ms": {
+    "mean": 0.06,
+    "p50": 0.1,
+    "p95": 0.1,
+    "p99": 0.2
+  },
+  "inference_ms": {
+    "mean": 2284.1,
+    "p50": 2203.0,
+    "p95": 3101.6,
+    "p99": 4099.0
+  }
+}

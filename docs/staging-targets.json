@@ -1,0 +1,13 @@
+{
+  "description": "Provisional staging service targets for a 1 CPU / 2 GB Render backend and 256 MB PostgreSQL. Review after representative traffic is measured.",
+  "min_requests": 100,
+  "min_unique_images": 3,
+  "required_concurrency": 4,
+  "min_success_rate": 0.99,
+  "max_client_p95_ms": 2000,
+  "max_client_p99_ms": 4000,
+  "max_server_processing_p95_ms": 1500,
+  "max_queue_p95_ms": 1000,
+  "max_inference_p95_ms": 750,
+  "min_throughput_rps": 2
+}

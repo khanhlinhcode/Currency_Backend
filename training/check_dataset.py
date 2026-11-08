@@ -1,68 +1,70 @@
 import matplotlib.pyplot as plt
-import os
-import random
-from pathlib import Path
-import cv2
 
-DATA_DIR = Path("dataset/processed/train")
-IMG_SIZE = (224, 224)
-COLS = 5
+# =========================
+# CREATE FIGURE
+# =========================
+fig, ax = plt.subplots(figsize=(12, 3))
 
-# ======================
-# GROUP CLASSES
-# ======================
-classes = [c for c in os.listdir(DATA_DIR) if (DATA_DIR / c).is_dir()]
+# =========================
+# FUNCTION DRAW BOX
+# =========================
+def draw_box(x, text, color):
+    ax.text(
+        x, 0, text,
+        ha='center',
+        va='center',
+        fontsize=12,
+        fontweight='bold',
+        bbox=dict(
+            boxstyle="round,pad=0.6",
+            fc=color,
+            ec="black",
+            lw=2
+        )
+    )
 
-vn_classes  = [c for c in classes if c.startswith("VN")]
-usa_classes = [c for c in classes if c.startswith("USA")]
-inr_classes = [c for c in classes if c.startswith("INR")]
+# =========================
+# POSITIONS (CÂN ĐỀU)
+# =========================
+positions = [0, 3, 6, 9]
 
-# 👉 lấy mỗi nhóm 4 class
-selected_classes = (
-    sorted(vn_classes)[:4] +
-    sorted(usa_classes)[:4] +
-    sorted(inr_classes)[:4]
+# =========================
+# DRAW PIPELINE
+# =========================
+draw_box(positions[0], "Input Image", "#f8d7da")
+draw_box(positions[1], "Preprocessing\n(Resize, Normalize)", "#cfe2f3")
+draw_box(positions[2], "EfficientNet Model", "#d4edda")
+draw_box(positions[3], "Prediction\n(Label + Confidence)", "#d1ecf1")
+
+# =========================
+# DRAW ARROWS
+# =========================
+for i in range(len(positions) - 1):
+    ax.annotate(
+        "",
+        xy=(positions[i+1] - 0.9, 0),
+        xytext=(positions[i] + 0.9, 0),
+        arrowprops=dict(
+            arrowstyle="->",
+            lw=2
+        )
+    )
+
+# =========================
+# STYLE
+# =========================
+ax.set_xlim(-1, 10)
+ax.set_ylim(-1, 1)
+ax.axis('off')
+
+# TITLE
+plt.title(
+    "Banknote Recognition Pipeline",
+    fontsize=15,
+    fontweight='bold'
 )
 
-print("Selected:", selected_classes)
-
-rows = (len(selected_classes) // COLS) + 1
-
-plt.figure(figsize=(COLS * 3, rows * 3))
-
-plot_index = 1
-
-# ======================
-# LOAD IMAGE
-# ======================
-for cls in selected_classes:
-    class_path = DATA_DIR / cls
-    images = [img for img in os.listdir(class_path) if not img.startswith('.')]
-
-    if not images:
-        continue
-
-    img_path = class_path / random.choice(images)
-    img = cv2.imread(str(img_path))
-
-    if img is None:
-        continue
-
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, IMG_SIZE)
-
-    plt.subplot(rows, COLS, plot_index)
-    plt.imshow(img)
-    plt.title(cls, fontsize=9)
-    plt.axis("off")
-
-    plot_index += 1
-
-# ======================
-# SAVE
-# ======================
+# SAVE + SHOW
 plt.tight_layout()
-plt.savefig("dataset_balanced.png", dpi=300)
+plt.savefig("Hinh_5_2_pipeline_no_softmax.png", dpi=300)
 plt.show()
-
-print("✅ Saved: dataset_balanced.png")

@@ -1,0 +1,43 @@
+# Free, sleeping staging only. PostgreSQL and private S3 storage are external.
+services:
+  - type: web
+    name: currency-ai-free-staging
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile.free
+    healthCheckPath: /ready
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: MODEL_PATH
+        value: /app/models/efficientnetb0_candidate.onnx
+      - key: MODEL_MANIFEST_PATH
+        value: /app/models/edge-manifest.json
+      - key: MODEL_S3_KEY
+        value: staging/models/1.1.0/efficientnetb0_candidate.onnx
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: INFERENCE_CONCURRENCY
+        value: '1'

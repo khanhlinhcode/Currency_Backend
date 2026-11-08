@@ -1,0 +1,211 @@
+{
+  "generated_at": "2026-11-08T06:32:12.826237+00:00",
+  "interpretation": "Diagnostic only: historical split has leakage and unverified physical groups",
+  "model_version": "1.1.0",
+  "model_sha256": "737a0fcf1de09f8acf2f226e9ca54afc4a970f0738ae17dc135d146efda7487c",
+  "onnx_sha256": "737a0fcf1de09f8acf2f226e9ca54afc4a970f0738ae17dc135d146efda7487c",
+  "source_keras_sha256": "688efeec9b612d6777f450e63c75803f6705b2cb9eddf5518465b288f696f45e",
+  "dataset_version": "a4d58e1ef81b055e1a97a6e7fb13f6e082818b1c36810e7e0753c2340cc28c8b",
+  "group_split_verified": false,
+  "exact_cross_split_duplicates": 182,
+  "conflicting_label_groups": 2,
+  "confidence_threshold": 0.6,
+  "test_samples": 1537,
+  "accuracy": 0.962915,
+  "macro_f1": 0.959396,
+  "ece_10_bins": 0.022638,
+  "accepted_coverage": 0.957059,
+  "accepted_accuracy": 0.978246,
+  "high_confidence_errors": 32,
+  "per_class": {
+    "INR_10": {
+      "support": 75,
+      "precision": 0.888889,
+      "recall": 0.853333,
+      "f1": 0.870748
+    },
+    "INR_100": {
+      "support": 75,
+      "precision": 0.956522,
+      "recall": 0.88,
+      "f1": 0.916667
+    },
+    "INR_20": {
+      "support": 75,
+      "precision": 0.909091,
+      "recall": 0.933333,
+      "f1": 0.921053
+    },
+    "INR_200": {
+      "support": 83,
+      "precision": 0.953488,
+      "recall": 0.987952,
+      "f1": 0.970414
+    },
+    "INR_2000": {
+      "support": 73,
+      "precision": 0.986486,
+      "recall": 1.0,
+      "f1": 0.993197
+    },
+    "INR_50": {
+      "support": 75,
+      "precision": 0.898734,
+      "recall": 0.946667,
+      "f1": 0.922078
+    },
+    "INR_500": {
+      "support": 73,
+      "precision": 1.0,
+      "recall": 0.958904,
+      "f1": 0.979021
+    },
+    "USA_1 Dollar": {
+      "support": 92,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "USA_10 Dollar": {
+      "support": 116,
+      "precision": 0.983051,
+      "recall": 1.0,
+      "f1": 0.991453
+    },
+    "USA_100 Dollar": {
+      "support": 94,
+      "precision": 0.989362,
+      "recall": 0.989362,
+      "f1": 0.989362
+    },
+    "USA_2 Dollar": {
+      "support": 94,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "USA_5 Dollar": {
+      "support": 94,
+      "precision": 0.958763,
+      "recall": 0.989362,
+      "f1": 0.973822
+    },
+    "USA_50 Dollar": {
+      "support": 104,
+      "precision": 0.99,
+      "recall": 0.951923,
+      "f1": 0.970588
+    },
+    "VN_000000": {
+      "support": 38,
+      "precision": 0.948718,
+      "recall": 0.973684,
+      "f1": 0.961039
+    },
+    "VN_000200": {
+      "support": 38,
+      "precision": 1.0,
+      "recall": 0.947368,
+      "f1": 0.972973
+    },
+    "VN_000500": {
+      "support": 38,
+      "precision": 0.95,
+      "recall": 1.0,
+      "f1": 0.974359
+    },
+    "VN_001000": {
+      "support": 38,
+      "precision": 1.0,
+      "recall": 0.921053,
+      "f1": 0.958904
+    },
+    "VN_002000": {
+      "support": 38,
+      "precision": 0.925,
+      "recall": 0.973684,
+      "f1": 0.948718
+    },
+    "VN_005000": {
+      "support": 24,
+      "precision": 1.0,
+      "recall": 0.916667,
+      "f1": 0.956522
+    },
+    "VN_010000": {
+      "support": 38,
+      "precision": 1.0,
+      "recall": 0.894737,
+      "f1": 0.944444
+    },
+    "VN_020000": {
+      "support": 24,
+      "precision": 0.916667,
+      "recall": 0.916667,
+      "f1": 0.916667
+    },
+    "VN_050000": {
+      "support": 24,
+      "precision": 0.96,
+      "recall": 1.0,
+      "f1": 0.979592
+    },
+    "VN_100000": {
+      "support": 38,
+      "precision": 1.0,
+      "recall": 0.947368,
+      "f1": 0.972973
+    },
+    "VN_200000": {
+      "support": 38,
+      "precision": 0.883721,
+      "recall": 1.0,
+      "f1": 0.938272
+    },
+    "VN_500000": {
+      "support": 38,
+      "precision": 0.926829,
+      "recall": 1.0,
+      "f1": 0.962025
+    }
+  },
+  "wall_seconds": 63.819,
+  "images_per_second": 24.084,
+  "inference_ms": {
+    "p50": 29.173,
+    "p95": 51.253,
+    "p99": 97.427
+  },
+  "environment": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "python": "3.11.16",
+    "onnxruntime": "1.23.2"
+  },
+  "label_counts": {
+    "INR_10": 75,
+    "INR_100": 75,
+    "INR_20": 75,
+    "INR_200": 83,
+    "INR_2000": 73,
+    "INR_50": 75,
+    "INR_500": 73,
+    "USA_1 Dollar": 92,
+    "USA_10 Dollar": 116,
+    "USA_100 Dollar": 94,
+    "USA_2 Dollar": 94,
+    "USA_5 Dollar": 94,
+    "USA_50 Dollar": 104,
+    "VN_000000": 38,
+    "VN_000200": 38,
+    "VN_000500": 38,
+    "VN_001000": 38,
+    "VN_002000": 38,
+    "VN_005000": 24,
+    "VN_010000": 38,
+    "VN_020000": 24,
+    "VN_050000": 24,
+    "VN_100000": 38,
+    "VN_200000": 38,
+    "VN_500000": 38
+  }
+}

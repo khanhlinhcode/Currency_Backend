@@ -1,0 +1,29 @@
+name: Staging monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '20 2 * * *'
+
+jobs:
+  probe:
+    if: vars.STAGING_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Probe staging
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+          STAGING_USERNAME: ${{ secrets.STAGING_USERNAME }}
+          STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
+        run: python scripts/monitor_staging.py --url "$STAGING_URL" --require-auth --output results/staging-monitor.json
+      - name: Retain monitoring evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-monitor-${{ github.run_id }}
+          path: results/staging-monitor.json
+          retention-days: 30

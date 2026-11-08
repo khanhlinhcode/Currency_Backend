@@ -15,7 +15,14 @@ class PredictionResponse(BaseModel):
     suspicious: bool
     estimated_value: int
     inference_time: float
+    queue_time: float
+    processing_time: float
+    model_version: str
     top3: List[TopPrediction]
+
+
+class PredictionReview(BaseModel):
+    actual_label: str
 
 
 class UserCreate(BaseModel):

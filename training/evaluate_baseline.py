@@ -20,6 +20,7 @@ from sklearn.preprocessing import label_binarize
 # CONFIG
 # ======================
 DATA_DIR = Path("dataset/processed")
+# MODEL_PATH = Path("models/mobilenetv2_transfer.keras")
 MODEL_PATH = Path("models/mobilenetv2_transfer.keras")
 RESULT_DIR = Path("results")
 RESULT_DIR.mkdir(parents=True, exist_ok=True)

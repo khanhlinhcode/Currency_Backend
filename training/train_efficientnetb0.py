@@ -386,12 +386,13 @@
 
 # print("✅ Model saved")
 from pathlib import Path
+import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.applications.efficientnet import EfficientNetB0, preprocess_input
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, CSVLogger
 from sklearn.utils.class_weight import compute_class_weight
 
 # ======================
@@ -404,8 +405,8 @@ np.random.seed(SEED)
 # ======================
 # CONFIG
 # ======================
-DATA_DIR = Path("dataset/processed")
-MODEL_DIR = Path("models")
+DATA_DIR = Path(os.getenv("DATA_DIR", "dataset/processed"))
+MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 IMG_SIZE = (224, 224)
@@ -419,7 +420,6 @@ LR_PHASE2 = 1e-5
 
 train_dir = DATA_DIR / "train"
 val_dir = DATA_DIR / "val"
-test_dir = DATA_DIR / "test"
 
 # ======================
 # DATA PIPELINE
@@ -447,7 +447,8 @@ train_gen = train_datagen.flow_from_directory(
     batch_size=BATCH_SIZE,
     class_mode="categorical",
     shuffle=True,
-    seed=SEED
+    seed=SEED,
+    interpolation="nearest",
 )
 
 val_gen = val_test_datagen.flow_from_directory(
@@ -456,24 +457,18 @@ val_gen = val_test_datagen.flow_from_directory(
     batch_size=BATCH_SIZE,
     class_mode="categorical",
     shuffle=False,
-    seed=SEED
+    seed=SEED,
+    interpolation="nearest",
 )
 
-test_gen = val_test_datagen.flow_from_directory(
-    test_dir,
-    target_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    class_mode="categorical",
-    shuffle=False,
-    seed=SEED
-)
+if train_gen.class_indices != val_gen.class_indices:
+    raise ValueError("Train and validation class mappings differ; regenerate a clean grouped split")
 
 num_classes = train_gen.num_classes
 
 print("Classes:", train_gen.class_indices)
 print("Train samples:", train_gen.samples)
 print("Validation samples:", val_gen.samples)
-print("Test samples:", test_gen.samples)
 print("Number of classes:", num_classes)
 
 # ======================
@@ -514,8 +509,12 @@ model = models.Model(inputs, outputs)
 # CALLBACKS
 # ======================
 ckpt_path = MODEL_DIR / "efficientnetb0_best.keras"
+history_path = Path(os.getenv("HISTORY_PATH", "results/efficientnetb0_training_history.csv"))
+history_path.parent.mkdir(parents=True, exist_ok=True)
+history_path.unlink(missing_ok=True)
 
 callbacks = [
+    CSVLogger(str(history_path), append=True),
     EarlyStopping(
         monitor="val_loss",
         patience=5,
@@ -586,13 +585,6 @@ history2 = model.fit(
     class_weight=class_weight,
     verbose=1
 )
-
-# ======================
-# EVALUATE
-# ======================
-test_loss, test_acc = model.evaluate(test_gen, verbose=1)
-print(f"\n✅ EfficientNetB0 Test accuracy: {test_acc:.4f}")
-print(f"✅ EfficientNetB0 Test loss: {test_loss:.4f}")
 
 # ======================
 # SAVE FINAL

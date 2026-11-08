@@ -39,7 +39,8 @@ def prepare_country(country_dir):
         }
 
         for split, files in splits.items():
-            out_dir = OUT_DIR / split / f"{country}_{denom_dir.name}"
+            label = f"{country}_{denom_dir.name}".replace("USA_2 Doolar", "USA_2 Dollar")
+            out_dir = OUT_DIR / split / label
             out_dir.mkdir(parents=True, exist_ok=True)
 
             for f in files:

@@ -1,0 +1,20 @@
+{
+  "version": "1.1.0",
+  "release_status": "candidate",
+  "architecture": "EfficientNetB0",
+  "framework": "TensorFlow/Keras 2.16.2",
+  "artifact": "efficientnetb0_best.keras",
+  "sha256": "688efeec9b612d6777f450e63c75803f6705b2cb9eddf5518465b288f696f45e",
+  "input_size": [224, 224],
+  "resize_interpolation": "nearest",
+  "confidence_threshold": 0.6,
+  "preprocessing": "tensorflow.keras.applications.efficientnet.preprocess_input",
+  "dataset_version": "legacy-unversioned",
+  "test_metrics": null,
+  "class_names": [
+    "INR_10", "INR_100", "INR_20", "INR_200", "INR_2000", "INR_50", "INR_500",
+    "USA_1 Dollar", "USA_10 Dollar", "USA_100 Dollar", "USA_2 Dollar", "USA_5 Dollar", "USA_50 Dollar",
+    "VN_000000", "VN_000200", "VN_000500", "VN_001000", "VN_002000", "VN_005000",
+    "VN_010000", "VN_020000", "VN_050000", "VN_100000", "VN_200000", "VN_500000"
+  ]
+}
