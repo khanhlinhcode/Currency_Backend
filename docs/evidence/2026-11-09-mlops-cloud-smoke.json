@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-09",
+  "base_url": "https://currency-ai-free-staging.onrender.com",
+  "checks": {
+    "ready": true,
+    "guest_runs_denied": true,
+    "admin_login": true,
+    "analyst_login": true,
+    "analyst_runs_denied": true,
+    "analyst_monitor_denied": true,
+    "run_sync": true,
+    "run_list": true,
+    "run_detail": true,
+    "run_evaluation_download": true,
+    "run_metrics_csv": true,
+    "benchmark_c1_archived": true,
+    "benchmark_c4_archived": true,
+    "benchmark_c8_archived": true,
+    "benchmark_list": true,
+    "monitor_current": true,
+    "monitor_saved": true,
+    "monitor_history": true
+  },
+  "sync_result": {
+    "registered": 1
+  },
+  "run_id": "20261108T063700Z-onnx-diagnostic",
+  "monitoring_status": "insufficient_data",
+  "drift_status": "insufficient_data",
+  "operational_sample_size": 2,
+  "passed": true
+}

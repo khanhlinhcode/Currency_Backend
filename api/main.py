@@ -661,7 +661,7 @@ def model_run_metrics_csv(run_id: str, _current_admin: User = Depends(get_curren
     writer.writerow(["class", "precision", "recall", "f1", "support"])
     for label, values in sorted(evaluation.get("per_class", {}).items()):
         writer.writerow([label, values.get("precision"), values.get("recall"),
-                         values.get("f1-score"), values.get("support")])
+                         values.get("f1", values.get("f1-score")), values.get("support")])
     return Response(content=target.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{run_id}-metrics.csv"'})
 
@@ -724,6 +724,31 @@ def get_mlops_benchmark(benchmark_id: str, _current_admin: User = Depends(get_cu
     if hashlib.sha256(data).hexdigest() != row.report_sha256:
         raise HTTPException(status_code=409, detail="Benchmark checksum mismatch")
     return json.loads(data)
+
+
+@app.delete("/mlops/benchmark-traffic/{run_id}")
+def purge_mlops_benchmark_traffic(run_id: str, _current_admin: User = Depends(get_current_admin),
+                                  db: Session = Depends(get_db)):
+    """Remove tagged staging test traffic after its report has been archived."""
+    if ENVIRONMENT != "staging":
+        raise HTTPException(status_code=403, detail="Benchmark cleanup is staging only")
+    try:
+        canonical_id = str(uuid.UUID(run_id))
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail="Invalid benchmark run ID") from error
+    archived = (db.query(MLOpsBenchmark).filter(MLOpsBenchmark.environment == ENVIRONMENT).all())
+    if not any(json.loads(item.summary_json).get("benchmark_run_id") == canonical_id for item in archived):
+        raise HTTPException(status_code=409, detail="Archive the benchmark report before deleting traffic")
+    rows = (db.query(PredictionHistory)
+            .filter(PredictionHistory.requested_by == f"benchmark:{canonical_id}").all())
+    for row in rows:
+        if row.image_path:
+            if not re.fullmatch(r"predictions/[0-9a-f-]{36}\.jpg", row.image_path):
+                raise HTTPException(status_code=409, detail="Unexpected benchmark image key")
+            delete_image(row.image_path)
+        db.delete(row)
+    db.commit()
+    return {"run_id": canonical_id, "deleted_records": len(rows)}
 
 
 @app.get("/mlops/monitoring")

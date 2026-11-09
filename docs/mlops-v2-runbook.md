@@ -61,4 +61,6 @@ For an application rollback, retain the previous Render deploy and immutable `MO
 
 After each deploy, check admin/analyst authorization; prediction, review, private image viewing; run/benchmark/monitor pages; and the daily monitor. Use three images from different classes and sizes, ten warmups and 100 measured requests each at concurrency 1, 4 and 8. Save a separate cold-start measurement and a sustained-load report with commit, Render plan, model hash, error rate, throughput and p50/p95/p99. Purge benchmark traffic after preserving the reports. Do not apply paid-plan targets to Render Free.
 
+The admin-only `DELETE /mlops/benchmark-traffic/{benchmark_run_id}` deletes records and private images only when the matching benchmark report is already in the registry. Repeating cleanup is safe and does not delete the retained report.
+
 The current human review queue is incomplete, so model 1.1.0 remains `candidate` and production startup must continue to reject it. Any backup/restore and rollback evidence must describe what was actually exercised on cloud versus an isolated local drill.
