@@ -31,6 +31,8 @@ def main():
     assert manifest["release_status"] in {"candidate", "approved"}, "Invalid release status"
     if manifest["release_status"] == "approved":
         assert manifest["dataset_version"] != "legacy-unversioned", "Approved model requires a versioned dataset"
+        assert len(manifest.get("dataset_manifest_sha256", "")) == 64, "Approved model requires an audited dataset manifest"
+        assert len(manifest.get("quality_gates_sha256", "")) == 64, "Approved model requires a locked quality policy"
         assert manifest["test_metrics"] and manifest["test_metrics"]["test_samples"] > 0, "Approved model requires test metrics"
     if args.require_artifact or args.model.exists():
         assert args.model.exists(), "Model artifact is missing"

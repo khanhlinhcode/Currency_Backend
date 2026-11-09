@@ -18,21 +18,21 @@ An isolated staging service may use `APP_ENV=staging` with this candidate model 
 
 Install Python 3.11 and `requirements-training.txt`. After a group CSV exists, run the following with paths and quality thresholds chosen for the use case:
 
-`python scripts/run_candidate_pipeline.py --dataset-root dataset/processed_v2 --version 2.0.0 --benchmark-image path/to/test-image.jpg` automates audit, training, evaluation, warm benchmark and run recording. The detailed commands below can also be run individually for review and debugging.
+`python scripts/run_candidate_pipeline.py --dataset-root dataset/processed_v2 --version 2.0.0 --benchmark-image path/to/test-image.jpg --gates-file results/quality-gates-v2.json --training-config results/training-config-v2.json` automates audit, training, evaluation, warm benchmark and run recording. The quality policy must be locked before held-out evaluation. See [MLOps v2 runbook](mlops-v2-runbook.md) for the human review fields and dataset manifest. The detailed commands below can also be run individually for review and debugging.
 
 ```bash
-python training/split_grouped.py --raw dataset/curated_raw --groups results/curated-groups.csv --output dataset/processed_v2 --attested-physical-groups
+python training/split_grouped.py --raw dataset/curated_raw_v2 --groups results/curated-groups-v2.csv --curation-report results/curation-v2.json --dataset-version 2.0.0 --output dataset/processed_v2 --attested-physical-groups
 python training/audit_dataset.py --root dataset/processed_v2 --output results/dataset-audit-v2.json
 DATA_DIR=dataset/processed_v2 python training/train_efficientnetb0.py
 python scripts/create_candidate.py --model models/efficientnetb0_best.keras --audit results/dataset-audit-v2.json --train-dir dataset/processed_v2/train --version 2.0.0
-python training/evaluate_release.py --test-dir dataset/processed_v2/test --audit results/dataset-audit-v2.json
+python training/evaluate_release.py --test-dir dataset/processed_v2/test --audit results/dataset-audit-v2.json --gates-file results/quality-gates-v2.json
 python -m training.benchmark_inference path/to/test-image.jpg --runs 100 --output results/benchmark.json
-python scripts/promote_release.py --audit results/dataset-audit-v2.json --evaluation results/release-evaluation.json --benchmark results/benchmark.json --min-accuracy 0.95 --min-macro-f1 0.93 --min-class-recall 0.85 --max-ece 0.10 --min-accepted-accuracy 0.97 --max-p95-ms 250
+python scripts/promote_release.py --audit results/dataset-audit-v2.json --evaluation results/release-evaluation.json --benchmark results/benchmark.json --gates-file results/quality-gates-v2.json --report results/release-gate-v2.json
 python scripts/verify_release.py --require-artifact
-python scripts/record_run.py --audit results/dataset-audit-v2.json --evaluation results/release-evaluation.json --benchmark results/benchmark.json --training-history results/efficientnetb0_training_history.csv --status approved
+python scripts/record_run.py --audit results/dataset-audit-v2.json --evaluation results/release-evaluation.json --benchmark results/benchmark.json --training-history results/efficientnetb0_training_history.csv --training-config results/training-config-v2.json --gates-file results/quality-gates-v2.json --release-gate results/release-gate-v2.json --model models/efficientnetb0_best.keras --status approved
 ```
 
-The numeric thresholds above are examples for the command; agree on acceptance criteria before training. The model is not approved until every gate passes. Training history is written from actual epochs to `results/efficientnetb0_training_history.csv`.
+Thresholds in `docs/model-quality-gates.example.json` are examples only. Agree on acceptance criteria and lock a dataset-specific policy before test evaluation. The model is not approved until every gate passes. Training history is written from actual epochs to `results/efficientnetb0_training_history.csv`.
 
 ## Provisioning and deploy
 

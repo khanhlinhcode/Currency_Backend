@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -20,9 +21,21 @@ def main():
     parser.add_argument("--test-dir", type=Path, default=Path("dataset/processed/test"))
     parser.add_argument("--output", type=Path, default=Path("results/release-evaluation.json"))
     parser.add_argument("--audit", type=Path, help="Optional dataset audit for exact-duplicate exclusion diagnostic")
+    parser.add_argument("--gates-file", type=Path, help="Locked quality policy registered before this test")
     args = parser.parse_args()
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    gates_sha256 = None
+    if args.gates_file:
+        gates_bytes = args.gates_file.read_bytes()
+        gates = json.loads(gates_bytes)
+        if (gates.get("status") != "locked" or not gates.get("approved_by")
+            or gates.get("dataset_version") != manifest["dataset_version"]):
+            raise SystemExit("A locked quality policy for this dataset is required")
+        locked_at = datetime.fromisoformat(gates["locked_at"].replace("Z", "+00:00"))
+        if locked_at.tzinfo is None or locked_at >= datetime.now(timezone.utc):
+            raise SystemExit("Quality policy must predate evaluation")
+        gates_sha256 = hashlib.sha256(gates_bytes).hexdigest()
     digest = hashlib.sha256()
     with args.model.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -59,6 +72,8 @@ def main():
         output_dict=True, zero_division=0,
     )
     output = {
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        "gates_sha256": gates_sha256,
         "model_version": manifest["version"],
         "model_sha256": manifest["sha256"],
         "dataset_version": manifest["dataset_version"],

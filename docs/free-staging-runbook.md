@@ -1,5 +1,7 @@
 # Free staging: deploy and evidence
 
+The expanded dataset review, MLOps registry, monitoring and backup workflow is in [MLOps v2 runbook](mlops-v2-runbook.md).
+
 This is a **demonstration staging environment**, not a production SLA. The current model is a `candidate`; its historical test split contains cross-split duplicates and has no verified physical-note group IDs. Do not claim release accuracy from it.
 
 ## Architecture and limits

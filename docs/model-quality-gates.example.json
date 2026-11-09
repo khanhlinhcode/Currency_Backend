@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "status": "draft",
+  "dataset_version": "REPLACE_WITH_VERIFIED_DATASET_VERSION",
+  "approved_by": null,
+  "locked_at": null,
+  "thresholds": {
+    "min_accuracy": 0.95,
+    "min_macro_f1": 0.93,
+    "min_class_recall": 0.85,
+    "max_ece": 0.1,
+    "min_accepted_accuracy": 0.97,
+    "max_p95_ms": 250
+  }
+}

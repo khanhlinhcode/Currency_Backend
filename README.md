@@ -32,6 +32,8 @@ Exact commands and acceptance criteria are in the [staging runbook](docs/staging
 
 The [free staging runbook](docs/free-staging-runbook.md) uses a checksum-pinned ONNX conversion on Render Free with isolated Supabase PostgreSQL and private object storage. The live [staging dashboard](https://currency-ai-free-dashboard.onrender.com) calls the [staging API](https://currency-ai-free-staging.onrender.com/ready). `render.free.yaml` describes the native Python service; `Dockerfile.free` supports local resource testing. This staging deployment does not relax the model release gate. `scripts/archive_run.py` saves immutable audit/evaluation/benchmark run folders, `/mlops/runs` exposes their summaries to admins, and the scheduled staging monitor retains JSON snapshots in CI.
 
+The [MLOps v2 runbook](docs/mlops-v2-runbook.md) covers human dataset review, pre-registered quality gates, PostgreSQL run metadata, private artifact reports, dashboard monitoring and encrypted backup/restore drills. Its release path stays blocked until physical group IDs and conflicting labels are reviewed.
+
 ## Deploy and verification
 
 `render.staging.yaml` defines an isolated staging backend and PostgreSQL database; `render.yaml` defines production. Both use the Dockerfile, Alembic migrations, private S3-compatible image/model storage and `/ready` health checks. The frontend uses `VITE_API_URL` and, on staging, `VITE_APP_ENV=staging` to require login before prediction.

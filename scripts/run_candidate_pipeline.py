@@ -1,7 +1,9 @@
 """Audit, train, evaluate, benchmark and record one isolated model candidate."""
 
 import argparse
+import json
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -22,6 +24,8 @@ def main():
     parser.add_argument("--version", required=True, help="New model release version")
     parser.add_argument("--benchmark-image", type=Path, required=True)
     parser.add_argument("--benchmark-runs", type=int, default=100)
+    parser.add_argument("--gates-file", type=Path, required=True, help="Pre-registered locked policy for the audited dataset")
+    parser.add_argument("--training-config", type=Path, default=Path("docs/training-config.example.json"))
     parser.add_argument("--runs-root", type=Path, default=Path("results/pipeline"))
     parser.add_argument("--archive-to-s3", action="store_true", help="Archive the completed run in private staging storage")
     args = parser.parse_args()
@@ -40,16 +44,28 @@ def main():
     history_path = work / "training-history.csv"
     evaluation_path = work / "release-evaluation.json"
     benchmark_path = work / "benchmark.json"
+    gate_report_path = work / "release-gate.json"
+    training_config_path = work / "training-config.json"
+    shutil.copy2(args.training_config, training_config_path)
+    config = json.loads(training_config_path.read_text(encoding="utf-8"))
+    if not isinstance(config.get("seed"), int) or config.get("batch_size", 0) < 1:
+        parser.error("Training config requires a seed and positive batch size")
     python = sys.executable
 
     run_step("dataset audit", [python, "training/audit_dataset.py", "--root", str(args.dataset_root), "--output", str(audit_path)])
-    train_environment = dict(os.environ, DATA_DIR=str(args.dataset_root), MODEL_DIR=str(model_dir), HISTORY_PATH=str(history_path))
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    if not audit.get("dataset_manifest_verified") or not audit.get("human_review_complete"):
+        raise SystemExit("Pipeline requires a versioned dataset with complete human review")
+    from quality_gates import load_gates
+    load_gates(args.gates_file, audit["dataset_version"])
+    train_environment = dict(os.environ, DATA_DIR=str(args.dataset_root), MODEL_DIR=str(model_dir), HISTORY_PATH=str(history_path), TRAINING_CONFIG_PATH=str(training_config_path.resolve()))
     run_step("train", [python, "training/train_efficientnetb0.py"], train_environment)
     run_step("candidate manifest", [python, "scripts/create_candidate.py", "--model", str(model_path), "--audit", str(audit_path), "--train-dir", str(args.dataset_root / "train"), "--version", args.version, "--output", str(manifest_path)])
-    run_step("held-out test evaluation", [python, "training/evaluate_release.py", "--manifest", str(manifest_path), "--model", str(model_path), "--test-dir", str(args.dataset_root / "test"), "--audit", str(audit_path), "--output", str(evaluation_path)])
+    run_step("held-out test evaluation", [python, "training/evaluate_release.py", "--manifest", str(manifest_path), "--model", str(model_path), "--test-dir", str(args.dataset_root / "test"), "--audit", str(audit_path), "--gates-file", str(args.gates_file), "--output", str(evaluation_path)])
     benchmark_environment = dict(os.environ, MODEL_PATH=str(model_path), MODEL_MANIFEST_PATH=str(manifest_path))
     run_step("warm inference benchmark", [python, "-m", "training.benchmark_inference", str(args.benchmark_image), "--runs", str(args.benchmark_runs), "--output", str(benchmark_path)], benchmark_environment)
-    run_step("record run", [python, "scripts/record_run.py", "--manifest", str(manifest_path), "--audit", str(audit_path), "--evaluation", str(evaluation_path), "--benchmark", str(benchmark_path), "--training-history", str(history_path), "--status", "candidate", "--run-id", run_id])
+    run_step("quality gate check", [python, "scripts/promote_release.py", "--manifest", str(manifest_path), "--audit", str(audit_path), "--evaluation", str(evaluation_path), "--benchmark", str(benchmark_path), "--gates-file", str(args.gates_file), "--report", str(gate_report_path), "--check-only"])
+    run_step("record run", [python, "scripts/record_run.py", "--manifest", str(manifest_path), "--audit", str(audit_path), "--evaluation", str(evaluation_path), "--benchmark", str(benchmark_path), "--training-history", str(history_path), "--training-config", str(training_config_path), "--gates-file", str(args.gates_file), "--release-gate", str(gate_report_path), "--model", str(model_path), "--status", "candidate", "--run-id", run_id])
     if args.archive_to_s3:
         run_step("archive run", [python, "-m", "scripts.archive_run", str(Path("results/runs") / run_id), "--target", "staging"])
     print(f"\nCandidate {args.version} completed: {manifest_path}")

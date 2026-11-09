@@ -1,5 +1,7 @@
 # Staging release and measurement
 
+For the current Render Free deployment and dataset v2 quality policy, use [free staging](free-staging-runbook.md) and [MLOps v2](mlops-v2-runbook.md). This document retains the earlier paid-plan benchmark targets for comparison.
+
 Staging runs the candidate model with an isolated PostgreSQL database and a separate private S3 bucket. The backend requires an active login for predictions when `APP_ENV=staging`. The candidate's accuracy is not a production claim.
 
 ## 1. Prepare and review data
@@ -25,7 +27,7 @@ The split script requires a group ID for every curated image. The audit checks t
 After a grouped split passes the audit, use the isolated candidate pipeline. It stops immediately if the audit fails; it trains using train/validation only, then evaluates the held-out test set, benchmarks inference and records all inputs and outputs under a unique run ID:
 
 ```bash
-python scripts/run_candidate_pipeline.py --dataset-root dataset/processed_v2 --version 2.0.0 --benchmark-image path/to/representative.jpg
+python scripts/run_candidate_pipeline.py --dataset-root dataset/processed_v2 --version 2.0.0 --benchmark-image path/to/representative.jpg --gates-file results/quality-gates-v2.json --training-config results/training-config-v2.json
 ```
 
 For a manually executed candidate workflow, record each run after generating its audit, evaluation and benchmark reports:

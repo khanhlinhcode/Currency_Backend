@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 
 from .database import Base
 
@@ -44,3 +44,49 @@ class User(Base):
         onupdate=datetime.utcnow,
         nullable=False,
     )
+
+
+class MLOpsRun(Base):
+    __tablename__ = "mlops_runs"
+
+    run_id = Column(String(100), primary_key=True)
+    environment = Column(String(20), nullable=False, index=True)
+    status = Column(String(20), nullable=False)
+    model_version = Column(String(100), nullable=False, index=True)
+    dataset_version = Column(String(100), nullable=False, index=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+    object_prefix = Column(String(300), nullable=False)
+    record_sha256 = Column(String(64), nullable=False)
+    summary_json = Column(Text, nullable=False)
+
+
+class MLOpsBenchmark(Base):
+    __tablename__ = "mlops_benchmarks"
+
+    benchmark_id = Column(String(100), primary_key=True)
+    environment = Column(String(20), nullable=False, index=True)
+    model_version = Column(String(100), nullable=False, index=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+    object_key = Column(String(300), nullable=False)
+    report_sha256 = Column(String(64), nullable=False)
+    summary_json = Column(Text, nullable=False)
+
+
+class MLOpsMonitor(Base):
+    __tablename__ = "mlops_monitor_snapshots"
+
+    snapshot_id = Column(String(100), primary_key=True)
+    environment = Column(String(20), nullable=False, index=True)
+    checked_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    status = Column(String(30), nullable=False)
+    snapshot_json = Column(Text, nullable=False)
+
+
+class ApiErrorEvent(Base):
+    __tablename__ = "api_error_events"
+
+    id = Column(Integer, primary_key=True)
+    request_id = Column(String(36), nullable=False)
+    path = Column(String(300), nullable=False)
+    status_code = Column(Integer, nullable=False)
+    occurred_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

@@ -1,0 +1,10 @@
+{
+  "seed": 42,
+  "batch_size": 32,
+  "epochs_phase1": 15,
+  "epochs_phase2": 35,
+  "learning_rate_phase1": 0.0003,
+  "learning_rate_phase2": 0.00001,
+  "architecture": "EfficientNetB0",
+  "input_size": [224, 224]
+}

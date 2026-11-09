@@ -11,10 +11,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def request_json(url, *, data=None, token=None, timeout=120):
+def request_json(url, *, data=None, json_body=None, token=None, timeout=120):
     headers = {"Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if json_body is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(json_body, ensure_ascii=False).encode()
     if token:
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, data=data, headers=headers)
@@ -58,7 +61,19 @@ def main():
             if login.get("is_admin"):
                 runs, _ = request_json(base + "/mlops/runs", token=token, timeout=args.timeout)
                 report["checks"]["mlops_runs"] = isinstance(runs.get("runs"), list)
-                report["archived_run_count"] = len(runs.get("runs", []))
+                report["archived_run_count"] = runs.get("total", len(runs.get("runs", [])))
+                current, _ = request_json(base + "/mlops/monitoring/current", token=token, timeout=args.timeout)
+                report["checks"]["monitoring"] = current.get("status") in {"healthy", "insufficient_data"}
+                report["monitoring_status"] = current.get("status")
+                report["model_quality_status"] = current.get("drift_status")
+                report["operational_signals"] = {key: current.get(key) for key in (
+                    "api_5xx_24h", "storage_bytes", "processing_p95_ms", "processing_p99_ms",
+                    "low_confidence_rate", "distribution_js_divergence", "operational_sample_size",
+                    "reviewed_count", "reviewed_accuracy",
+                )}
+                saved, _ = request_json(base + "/mlops/monitoring", json_body=current,
+                                        token=token, timeout=args.timeout)
+                report["checks"]["snapshot_saved"] = bool(saved.get("snapshot_id"))
         else:
             report["auth_checks_skipped"] = "STAGING_USERNAME and STAGING_PASSWORD are not set"
             if args.require_auth:

@@ -4,14 +4,17 @@ import io
 import json
 import logging
 import math
+import hashlib
+import re
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from botocore.exceptions import ClientError
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -27,7 +30,9 @@ from .database import SessionLocal, engine
 from .dependencies import get_current_user, get_optional_current_user
 from .inference import CLASS_NAMES, CURRENCY_VALUE, MODEL_MANIFEST, MODEL_VERSION, preprocess_image
 from .model_loader import load_model
-from .models import PredictionHistory, User
+from .models import ApiErrorEvent, MLOpsBenchmark, MLOpsMonitor, MLOpsRun, PredictionHistory, User
+from .mlops_registry import canonical_bytes, register_benchmark, register_monitor, register_run
+from .monitoring import assess as assess_monitoring
 from .schemas import PredictionResponse, PredictionReview, UserCreate, UserOut, UserUpdate
 from .security import hash_password, verify_password
 from .users import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME
@@ -67,6 +72,16 @@ app = FastAPI(
 )
 
 
+def record_api_error(request_id: str, path: str, status_code: int):
+    try:
+        with SessionLocal() as db:
+            db.add(ApiErrorEvent(request_id=request_id, path=path[:300], status_code=status_code,
+                                 occurred_at=datetime.utcnow()))
+            db.commit()
+    except Exception:
+        logger.exception("failed_to_record_api_error request_id=%s", request_id)
+
+
 @app.middleware("http")
 async def request_logging(request: Request, call_next):
     request_id = str(uuid.uuid4())
@@ -74,8 +89,11 @@ async def request_logging(request: Request, call_next):
     try:
         response = await call_next(request)
     except Exception:
+        await run_in_threadpool(record_api_error, request_id, request.url.path, 500)
         logger.exception("http_request_failed request_id=%s path=%s", request_id, request.url.path)
         raise
+    if response.status_code >= 500:
+        await run_in_threadpool(record_api_error, request_id, request.url.path, response.status_code)
     response.headers["X-Request-ID"] = request_id
     if request.url.path not in {"/health", "/ready"}:
         logger.info(
@@ -542,26 +560,233 @@ def model_info(_current_user: User = Depends(get_current_user_record)):
 
 
 @app.get("/mlops/runs")
-def model_runs(_current_admin: User = Depends(get_current_admin)):
-    """Read archived run summaries; model training reports stay private."""
+def model_runs(model_version: Optional[str] = None, status_filter: Optional[str] = Query(None, alias="status"),
+               limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+               _current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Query run metadata; full reports remain in private object storage."""
+    query = db.query(MLOpsRun).filter(MLOpsRun.environment == ENVIRONMENT)
+    if model_version:
+        query = query.filter(MLOpsRun.model_version == model_version)
+    if status_filter:
+        query = query.filter(MLOpsRun.status == status_filter)
+    total = query.count()
+    rows = query.order_by(MLOpsRun.recorded_at.desc()).offset(offset).limit(limit).all()
+    return {"total": total, "runs": [json.loads(row.summary_json) for row in rows]}
+
+
+@app.post("/mlops/runs/sync")
+def sync_model_runs(_current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Backfill the SQL registry from existing immutable S3 run objects."""
     if STORAGE_BACKEND != "s3":
-        return {"runs": []}
-    from .storage import _s3_client
+        raise HTTPException(status_code=400, detail="Private object storage is not configured")
     from .config import S3_BUCKET
 
-    client = _s3_client()
-    prefix = "staging/runs/" if ENVIRONMENT == "staging" else "production/runs/"
-    keys = [item["Key"] for page in client.get_paginator("list_objects_v2").paginate(Bucket=S3_BUCKET, Prefix=prefix)
-            for item in page.get("Contents", []) if item["Key"].endswith("/run.json")]
-    summaries = []
-    for key in sorted(keys, reverse=True)[:20]:
-        report = json.loads(client.get_object(Bucket=S3_BUCKET, Key=key)["Body"].read())
-        summaries.append({field: report.get(field) for field in (
-            "run_id", "status", "recorded_at", "model_version", "dataset_version",
-            "group_split_verified", "accuracy", "macro_f1", "ece_10_bins",
-            "inference_p95_ms", "git_commit",
-        )})
-    return {"runs": summaries}
+    prefix = f"{ENVIRONMENT}/runs/"
+    registered = 0
+    for page in _s3_client().get_paginator("list_objects_v2").paginate(Bucket=S3_BUCKET, Prefix=prefix):
+        for item in page.get("Contents", []):
+            key = item["Key"]
+            if not key.endswith("/run.json"):
+                continue
+            data = _s3_client().get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
+            record = json.loads(data)
+            run_id = record.get("run_id", "")
+            if not re.fullmatch(r"[A-Za-z0-9-]{1,100}", run_id) or key != f"{prefix}{run_id}/run.json":
+                raise HTTPException(status_code=409, detail="Archived run path mismatch")
+            try:
+                register_run(db, record, ENVIRONMENT, f"{prefix}{run_id}/", hashlib.sha256(data).hexdigest())
+            except ValueError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            registered += 1
+    return {"registered": registered}
+
+
+def _run_record(db: Session, run_id: str):
+    row = db.get(MLOpsRun, run_id)
+    if row is None or row.environment != ENVIRONMENT:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return row
+
+
+def _run_artifact(row: MLOpsRun, name: str):
+    from .config import S3_BUCKET
+
+    if name not in {"run", "manifest", "audit", "evaluation", "benchmark", "training_history", "training_config", "quality_gates", "release_gate"}:
+        raise HTTPException(status_code=404, detail="Artifact not available")
+    record_bytes = _s3_client().get_object(Bucket=S3_BUCKET, Key=row.object_prefix + "run.json")["Body"].read()
+    if hashlib.sha256(record_bytes).hexdigest() != row.record_sha256:
+        raise HTTPException(status_code=409, detail="Run record checksum mismatch")
+    record = json.loads(record_bytes)
+    if name == "run":
+        return record_bytes, "run.json"
+    item = record.get("files", {}).get(name)
+    if not item or not re.fullmatch(r"[A-Za-z0-9_.-]+", item["file"]):
+        raise HTTPException(status_code=404, detail="Artifact not available")
+    data = _s3_client().get_object(Bucket=S3_BUCKET, Key=row.object_prefix + item["file"])["Body"].read()
+    if hashlib.sha256(data).hexdigest() != item["sha256"]:
+        raise HTTPException(status_code=409, detail="Artifact checksum mismatch")
+    return data, item["file"]
+
+
+@app.get("/mlops/runs/{run_id}")
+def model_run_detail(run_id: str, _current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    row = _run_record(db, run_id)
+    details = {"summary": json.loads(row.summary_json), "artifacts": {}}
+    for name in ("audit", "evaluation", "benchmark", "training_config", "quality_gates", "release_gate"):
+        try:
+            data, _ = _run_artifact(row, name)
+            details["artifacts"][name] = json.loads(data)
+        except HTTPException as error:
+            if error.status_code != 404:
+                raise
+    return details
+
+
+@app.get("/mlops/runs/{run_id}/artifacts/{name}")
+def model_run_download(run_id: str, name: str, _current_admin: User = Depends(get_current_admin),
+                       db: Session = Depends(get_db)):
+    data, filename = _run_artifact(_run_record(db, run_id), name)
+    media_type = "text/csv" if filename.endswith(".csv") else "application/json"
+    return Response(content=data, media_type=media_type,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/mlops/runs/{run_id}/metrics.csv")
+def model_run_metrics_csv(run_id: str, _current_admin: User = Depends(get_current_admin),
+                          db: Session = Depends(get_db)):
+    data, _ = _run_artifact(_run_record(db, run_id), "evaluation")
+    evaluation = json.loads(data)
+    target = io.StringIO()
+    writer = csv.writer(target)
+    writer.writerow(["class", "precision", "recall", "f1", "support"])
+    for label, values in sorted(evaluation.get("per_class", {}).items()):
+        writer.writerow([label, values.get("precision"), values.get("recall"),
+                         values.get("f1-score"), values.get("support")])
+    return Response(content=target.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{run_id}-metrics.csv"'})
+
+
+@app.get("/mlops/benchmarks")
+def list_mlops_benchmarks(model_version: Optional[str] = None, limit: int = Query(50, ge=1, le=100),
+                          _current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    query = db.query(MLOpsBenchmark).filter(MLOpsBenchmark.environment == ENVIRONMENT)
+    if model_version:
+        query = query.filter(MLOpsBenchmark.model_version == model_version)
+    rows = query.order_by(MLOpsBenchmark.recorded_at.desc()).limit(limit).all()
+    return {"benchmarks": [{"benchmark_id": row.benchmark_id, "recorded_at": row.recorded_at.isoformat(),
+        "model_version": row.model_version, **json.loads(row.summary_json)} for row in rows]}
+
+
+@app.post("/mlops/benchmarks")
+def save_mlops_benchmark(payload: dict, _current_admin: User = Depends(get_current_admin),
+                         db: Session = Depends(get_db)):
+    from .config import S3_BUCKET
+
+    if STORAGE_BACKEND != "s3":
+        raise HTTPException(status_code=400, detail="Private object storage is required")
+
+    benchmark_id = payload.get("benchmark_id", "")
+    report = payload.get("report")
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,100}", benchmark_id) or not isinstance(report, dict):
+        raise HTTPException(status_code=422, detail="Invalid benchmark ID or report")
+    if report.get("runs", 0) < 100 or not report.get("model_versions") or report.get("success_rate") is None:
+        raise HTTPException(status_code=422, detail="Benchmark requires at least 100 measured requests and model metadata")
+    content = canonical_bytes(report)
+    if len(content) > 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Benchmark report too large")
+    key = f"{ENVIRONMENT}/benchmarks/{benchmark_id}.json"
+    digest = hashlib.sha256(content).hexdigest()
+    try:
+        existing = _s3_client().get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
+        if hashlib.sha256(existing).hexdigest() != digest:
+            raise HTTPException(status_code=409, detail="Benchmark ID already exists with different report")
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") not in {"404", "NoSuchKey", "NotFound"}:
+            raise
+        _s3_client().put_object(Bucket=S3_BUCKET, Key=key, Body=content, ContentType="application/json",
+                                Metadata={"sha256": digest})
+    try:
+        register_benchmark(db, benchmark_id, report, ENVIRONMENT, key, digest)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"benchmark_id": benchmark_id, "sha256": digest}
+
+
+@app.get("/mlops/benchmarks/{benchmark_id}")
+def get_mlops_benchmark(benchmark_id: str, _current_admin: User = Depends(get_current_admin),
+                        db: Session = Depends(get_db)):
+    from .config import S3_BUCKET
+
+    row = db.get(MLOpsBenchmark, benchmark_id)
+    if not row or row.environment != ENVIRONMENT:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    data = _s3_client().get_object(Bucket=S3_BUCKET, Key=row.object_key)["Body"].read()
+    if hashlib.sha256(data).hexdigest() != row.report_sha256:
+        raise HTTPException(status_code=409, detail="Benchmark checksum mismatch")
+    return json.loads(data)
+
+
+@app.get("/mlops/monitoring")
+def list_mlops_monitoring(limit: int = Query(30, ge=1, le=100),
+                           _current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    rows = (db.query(MLOpsMonitor).filter(MLOpsMonitor.environment == ENVIRONMENT)
+            .order_by(MLOpsMonitor.checked_at.desc()).limit(limit).all())
+    return {"snapshots": [json.loads(row.snapshot_json) for row in rows]}
+
+
+@app.get("/mlops/monitoring/current")
+def current_mlops_monitoring(_current_admin: User = Depends(get_current_admin),
+                              db: Session = Depends(get_db)):
+    """Calculate operational signals; model drift needs an approved baseline and enough samples."""
+    from .config import S3_BUCKET
+
+    targets_path = Path(__file__).resolve().parents[1] / "docs/free-staging-monitor-targets.json"
+    targets = json.loads(targets_path.read_text(encoding="utf-8"))
+    operational = stats(_current_user=_current_admin, db=db)
+    rows = (db.query(PredictionHistory.prediction, PredictionHistory.confidence)
+            .filter(PredictionHistory.model_version == MODEL_VERSION,
+                    PredictionHistory.requested_by.notlike("benchmark:%"))
+            .order_by(PredictionHistory.id.desc()).limit(1000).all())
+    predictions = [{"prediction": row.prediction, "confidence": row.confidence,
+                    "threshold": CONFIDENCE_THRESHOLD} for row in rows]
+    errors_24h = (db.query(func.count(ApiErrorEvent.id))
+                  .filter(ApiErrorEvent.occurred_at >= datetime.utcnow() - timedelta(days=1)).scalar() or 0)
+    storage_bytes = None
+    if STORAGE_BACKEND == "s3":
+        try:
+            storage_bytes = sum(item["Size"] for page in _s3_client().get_paginator("list_objects_v2")
+                                .paginate(Bucket=S3_BUCKET) for item in page.get("Contents", []))
+        except Exception:
+            logger.exception("storage_usage_probe_failed")
+    baseline = None
+    if MODEL_MANIFEST.get("release_status") == "approved":
+        approved = (db.query(MLOpsRun).filter(MLOpsRun.environment == ENVIRONMENT,
+                    MLOpsRun.model_version == MODEL_VERSION, MLOpsRun.status == "approved")
+                    .order_by(MLOpsRun.recorded_at.desc()).first())
+        if approved:
+            audit_bytes, _ = _run_artifact(approved, "audit")
+            evaluation_bytes, _ = _run_artifact(approved, "evaluation")
+            audit = json.loads(audit_bytes)
+            evaluation = json.loads(evaluation_bytes)
+            if audit.get("dataset_manifest_verified") and audit.get("dataset_version") == evaluation.get("dataset_version"):
+                baseline = {"class_counts": audit["counts"]["test"],
+                            "accepted_coverage": evaluation["accepted_coverage"]}
+    assessed = assess_monitoring(operational, predictions, baseline, errors_24h, storage_bytes, targets)
+    return {"checked_at": datetime.now(timezone.utc).isoformat(), "environment": ENVIRONMENT,
+            "model_version": MODEL_VERSION, "release_status": MODEL_MANIFEST.get("release_status"),
+            "thresholds": {key: value for key, value in targets.items() if key != "note"}, **assessed}
+
+
+@app.post("/mlops/monitoring")
+def save_mlops_monitoring(payload: dict, _current_admin: User = Depends(get_current_admin),
+                           db: Session = Depends(get_db)):
+    if payload.get("status") not in {"healthy", "warning", "critical", "insufficient_data"} or not payload.get("checked_at"):
+        raise HTTPException(status_code=422, detail="Invalid monitoring snapshot")
+    try:
+        item = register_monitor(db, payload, ENVIRONMENT)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"snapshot_id": item.snapshot_id}
 
 # =====================================================
 # PREDICT (PUBLIC)

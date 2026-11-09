@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--raw", type=Path, default=Path("dataset/raw"))
     parser.add_argument("--output", type=Path, default=Path("results/raw-inventory.json"))
     parser.add_argument("--review-csv", type=Path, default=Path("results/group-review.csv"))
+    parser.add_argument("--reset-review", action="store_true", help="Explicitly discard existing review decisions")
     args = parser.parse_args()
     if not args.raw.is_dir():
         parser.error(f"Raw dataset directory does not exist: {args.raw}")
@@ -61,20 +62,39 @@ def main():
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    existing = {}
+    if args.review_csv.exists() and not args.reset_review:
+        with args.review_csv.open(newline="", encoding="utf-8") as source:
+            for row in csv.DictReader(source):
+                if row["path"] in existing:
+                    raise SystemExit(f"Duplicate existing review row: {row['path']}")
+                existing[row["path"]] = row
+        expected = {record["path"]: record for record in records}
+        if set(existing) != set(expected) or any(
+            existing[path]["exact_hash_group"] != record["sha256"]
+            or existing[path]["current_label"] != record["label"]
+            for path, record in expected.items()
+        ):
+            raise SystemExit("Raw inventory changed; existing review CSV was preserved. Create a new review file or use --reset-review explicitly")
     args.review_csv.parent.mkdir(parents=True, exist_ok=True)
     with args.review_csv.open("w", newline="", encoding="utf-8") as target:
-        writer = csv.DictWriter(target, fieldnames=["path", "current_label", "exact_hash_group", "label_conflict", "reviewed_label", "group_id", "review_notes"])
+        fields = ["path", "current_label", "exact_hash_group", "label_conflict", "reviewed_label", "group_id", "reviewed_by", "reviewed_at", "review_notes"]
+        writer = csv.DictWriter(target, fieldnames=fields)
         writer.writeheader()
         for record in records:
-            writer.writerow({
+            row = {
                 "path": record["path"],
                 "current_label": record["label"],
                 "exact_hash_group": record["sha256"],
                 "label_conflict": "yes" if record["path"] in conflicts else "",
                 "reviewed_label": "",
                 "group_id": "",
+                "reviewed_by": "",
+                "reviewed_at": "",
                 "review_notes": "",
-            })
+            }
+            row.update({field: existing.get(record["path"], {}).get(field, row[field]) for field in fields if field not in {"path", "current_label", "exact_hash_group", "label_conflict"}})
+            writer.writerow(row)
     print(f"Raw inventory: {len(records)} images, {len(exact_duplicate_groups)} exact-duplicate groups, {len(conflicting_groups)} conflicting-label groups")
     print(f"Review files: {args.output}, {args.review_csv}")
 

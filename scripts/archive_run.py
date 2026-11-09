@@ -7,6 +7,8 @@ from pathlib import Path
 from botocore.exceptions import ClientError
 
 from api.config import S3_BUCKET
+from api.database import SessionLocal
+from api.mlops_registry import register_run, validate_run_record
 from api.storage import _s3_client
 from scripts.verify_release import sha256
 
@@ -36,6 +38,7 @@ def main():
     args = parser.parse_args()
     record_path = args.run_dir / "run.json"
     record = json.loads(record_path.read_text(encoding="utf-8"))
+    validate_run_record(record)
     if record.get("run_id") != args.run_dir.name:
         raise SystemExit("Run ID does not match folder name")
     if args.target == "production" and record.get("status") != "approved":
@@ -52,6 +55,8 @@ def main():
         if path.is_file() and not path.is_symlink() and path.name != "run.json":
             put_immutable(client, prefix + path.name, path)
     put_immutable(client, prefix + "run.json", record_path)
+    with SessionLocal() as db:
+        register_run(db, record, args.target, prefix, sha256(record_path))
     print(f"Archived {record['status']} run {record['run_id']} to s3://{S3_BUCKET}/{prefix}")
 
 

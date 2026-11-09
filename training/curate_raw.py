@@ -8,6 +8,8 @@ import shutil
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from review_queue import review_issues
+
 
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -64,13 +66,20 @@ def main():
         if len(chosen_labels) != 1:
             raise SystemExit(f"Reviewed labels disagree within exact duplicate group: {digest}")
         representative = sorted(group, key=lambda row: row["path"])[0]
+        group_ids = {row.get("group_id", "").strip() for row in group}
+        if len(group_ids) > 1 and any(group_ids):
+            raise SystemExit(f"Exact copies have conflicting group IDs: {digest}")
         label = chosen_labels.pop()
         country, denomination = label.split("_", 1)
         destination = Path(country) / denomination / Path(representative["path"]).name
         included.append({
             "source": representative["path"], "path": str(destination), "label": label,
             "sha256": digest, "source_copies": len(group),
-            "group_id": representative["group_id"] if all(row["group_id"] == representative["group_id"] for row in group) else "",
+            "group_id": representative.get("group_id", "").strip(),
+            "reviewed_by": representative.get("reviewed_by", "").strip(),
+            "reviewed_at": representative.get("reviewed_at", "").strip(),
+            "source_paths": json.dumps(sorted(row["path"] for row in group)),
+            "review_complete": not any(review_issues(row) for row in group),
         })
 
     destinations = [item["path"] for item in included]
@@ -84,7 +93,7 @@ def main():
 
     args.group_template.parent.mkdir(parents=True, exist_ok=True)
     with args.group_template.open("w", newline="", encoding="utf-8") as target:
-        writer = csv.DictWriter(target, fieldnames=["path", "group_id", "label", "sha256", "source", "source_copies"])
+        writer = csv.DictWriter(target, fieldnames=["path", "group_id", "label", "sha256", "source", "source_copies", "reviewed_by", "reviewed_at", "source_paths", "review_complete"])
         writer.writeheader()
         writer.writerows(included)
     class_counts = Counter(item["label"] for item in included)
@@ -96,6 +105,8 @@ def main():
         "quarantined_images": sum(len(group["paths"]) for group in quarantined),
         "class_counts": dict(sorted(class_counts.items())),
         "group_ids_complete": all(item["group_id"] for item in included),
+        "human_review_complete": not quarantined and all(item["review_complete"] for item in included),
+        "review_csv_sha256": sha256(args.review_csv),
         "note": "Group IDs must identify a physical banknote or capture session; exact hashes alone are insufficient",
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)

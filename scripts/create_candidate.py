@@ -19,7 +19,9 @@ def main():
     if not 0 < args.confidence_threshold < 1:
         raise SystemExit("confidence threshold must be between zero and one")
     audit = json.loads(args.audit.read_text(encoding="utf-8"))
-    if not audit["group_split_verified"] or audit["exact_cross_split_duplicates"] or audit["conflicting_label_groups"] or not audit["class_sets_match"]:
+    if (not audit.get("dataset_manifest_verified") or not audit.get("human_review_complete")
+        or not audit["group_split_verified"] or audit["exact_cross_split_duplicates"]
+        or audit["conflicting_label_groups"] or not audit["class_sets_match"]):
         raise SystemExit("Dataset audit did not pass")
     labels = sorted(path.name for path in args.train_dir.iterdir() if path.is_dir())
     if labels != sorted(audit["counts"]["train"]):
@@ -44,6 +46,7 @@ def main():
         "confidence_threshold": args.confidence_threshold,
         "preprocessing": "tensorflow.keras.applications.efficientnet.preprocess_input",
         "dataset_version": audit["dataset_version"],
+        "dataset_manifest_sha256": audit["dataset_manifest_sha256"],
         "test_metrics": None,
         "class_names": labels,
     }

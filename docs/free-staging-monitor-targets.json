@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "minimum_model_samples": 100,
+  "minimum_reviewed_samples": 30,
+  "warning_processing_p95_ms": 2500,
+  "critical_processing_p95_ms": 5000,
+  "warning_api_5xx_24h": 1,
+  "critical_api_5xx_24h": 5,
+  "max_low_confidence_increase": 0.10,
+  "warning_distribution_js": 0.15,
+  "warning_storage_bytes": 800000000,
+  "note": "Provisional Render Free demonstration thresholds; cold start is measured separately"
+}

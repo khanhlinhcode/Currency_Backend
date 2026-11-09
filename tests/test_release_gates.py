@@ -103,8 +103,17 @@ class ReleaseGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             manifest = {"version": "test-1", "sha256": "a" * 64, "release_status": "candidate", "class_names": ["A", "B"]}
-            audit = {"group_split_verified": True, "class_sets_match": True, "exact_cross_split_duplicates": 0, "conflicting_label_groups": 0, "dataset_version": "dataset-1"}
+            audit = {"dataset_manifest_verified": True, "dataset_manifest_sha256": "d" * 64, "human_review_complete": True, "group_split_verified": True, "class_sets_match": True, "exact_cross_split_duplicates": 0, "conflicting_label_groups": 0, "dataset_version": "dataset-1"}
+            policy = {"schema_version": 1, "status": "locked", "dataset_version": "dataset-1",
+                      "approved_by": "reviewer", "locked_at": "2026-01-01T00:00:00Z",
+                      "thresholds": {"min_accuracy": 0.95, "min_macro_f1": 0.93,
+                                     "min_class_recall": 0.85, "max_ece": 0.1,
+                                     "min_accepted_accuracy": 0.97, "max_p95_ms": 250}}
+            gates_path = folder / "gates.json"
+            gates_path.write_text(json.dumps(policy))
             evaluation = {
+                "evaluated_at": "2026-01-02T00:00:00Z",
+                "gates_sha256": hashlib.sha256(gates_path.read_bytes()).hexdigest(),
                 "dataset_version": "dataset-1", "model_version": "test-1", "model_sha256": "a" * 64,
                 "accuracy": 0.98, "macro_f1": 0.97, "ece_10_bins": 0.02,
                 "accepted_accuracy": 0.98, "accepted_coverage": 0.95, "test_samples": 100,
@@ -120,8 +129,7 @@ class ReleaseGateTest(unittest.TestCase):
                     sys.executable, str(ROOT / "scripts/promote_release.py"),
                     "--manifest", str(paths["manifest"]), "--audit", str(paths["audit"]),
                     "--evaluation", str(paths["evaluation"]), "--benchmark", str(paths["benchmark"]),
-                    "--min-accuracy", "0.95", "--min-macro-f1", "0.93", "--min-class-recall", "0.85",
-                    "--max-ece", "0.1", "--min-accepted-accuracy", "0.97", "--max-p95-ms", "250",
+                    "--gates-file", str(gates_path), "--report", str(folder / "decision.json"),
                 ], capture_output=True, text=True, check=False)
 
             self.assertEqual(promote().returncode, 0)

@@ -1,0 +1,18 @@
+{
+  "backup_id": "20261109T063418Z",
+  "restored_at": "2026-11-09T06:34:19.562933+00:00",
+  "target": "local-isolated-postgresql",
+  "duration_seconds": 0.496,
+  "table_counts": {
+    "prediction_history": 0,
+    "users": 0,
+    "mlops_runs": 0,
+    "mlops_benchmarks": 0,
+    "mlops_monitor_snapshots": 0
+  },
+  "object_manifest_count": 1,
+  "encrypted_hashes_verified": true,
+  "restore_ok": true,
+  "note": "Object contents were not restored; this drill verifies the database and encrypted object manifest",
+  "source": "local PostgreSQL 16 and moto S3; no Supabase data"
+}

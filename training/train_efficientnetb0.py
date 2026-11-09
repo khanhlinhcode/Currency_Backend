@@ -387,6 +387,7 @@
 # print("✅ Model saved")
 from pathlib import Path
 import os
+import json
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models
@@ -398,7 +399,8 @@ from sklearn.utils.class_weight import compute_class_weight
 # ======================
 # REPRODUCIBILITY
 # ======================
-SEED = 42
+TRAINING_CONFIG = json.loads(Path(os.environ["TRAINING_CONFIG_PATH"]).read_text()) if os.getenv("TRAINING_CONFIG_PATH") else {}
+SEED = int(TRAINING_CONFIG.get("seed", 42))
 tf.keras.utils.set_random_seed(SEED)
 np.random.seed(SEED)
 
@@ -410,13 +412,13 @@ MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 IMG_SIZE = (224, 224)
-BATCH_SIZE = 32
+BATCH_SIZE = int(TRAINING_CONFIG.get("batch_size", 32))
 
-EPOCHS_PHASE1 = 15
-EPOCHS_PHASE2 = 35
+EPOCHS_PHASE1 = int(TRAINING_CONFIG.get("epochs_phase1", 15))
+EPOCHS_PHASE2 = int(TRAINING_CONFIG.get("epochs_phase2", 35))
 
-LR_PHASE1 = 3e-4
-LR_PHASE2 = 1e-5
+LR_PHASE1 = float(TRAINING_CONFIG.get("learning_rate_phase1", 3e-4))
+LR_PHASE2 = float(TRAINING_CONFIG.get("learning_rate_phase2", 1e-5))
 
 train_dir = DATA_DIR / "train"
 val_dir = DATA_DIR / "val"
