@@ -299,6 +299,7 @@ def device_events(payload: dict, device: DeviceRegistration = Depends(device_aut
     accepted = 0
     duplicates = 0
     seen_ids = set()
+    released_ids = set()
     now = datetime.now(timezone.utc)
     for event in events:
         if not isinstance(event, dict):
@@ -316,6 +317,12 @@ def device_events(payload: dict, device: DeviceRegistration = Depends(device_aut
         run = db.get(MLOpsRun, run_id)
         if not run or run.environment != ENVIRONMENT or run.status != "approved":
             raise HTTPException(status_code=422, detail="Telemetry requires an approved run")
+        if run_id not in released_ids:
+            released = (db.query(ReleaseEvent.id).filter(ReleaseEvent.environment == ENVIRONMENT,
+                ReleaseEvent.channel == device.channel, ReleaseEvent.to_run_id == run_id).first())
+            if not released:
+                raise HTTPException(status_code=422, detail="Run has not been released to this device channel")
+            released_ids.add(run_id)
         prediction = event.get("prediction", "")
         confidence = event.get("confidence")
         inference_ms = event.get("inference_ms")

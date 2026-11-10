@@ -91,3 +91,18 @@ These are warm, short runs on three images, not an SLA or a representative produ
 The `20261108T063700Z-onnx-diagnostic` training/evaluation record was archived immutably under `staging/runs/` and appears in the admin MLOps dashboard. The daily GitHub Actions staging monitor was configured with encrypted credentials and passed its manually triggered run. After benchmark cleanup, the monitor reported zero operational predictions, one archived run and all probes healthy. Backend CI at `2aeb27bf` and frontend CI at `3f8d1a90` passed.
 
 Cloud evidence: [deployment snapshot](evidence/2026-11-08-deployment-snapshot.json), [benchmark context](evidence/2026-11-08-cloud-benchmark-context.json), [concurrency 1](evidence/2026-11-08-free-cloud-c1.json), [4](evidence/2026-11-08-free-cloud-c4.json), [8](evidence/2026-11-08-free-cloud-c8.json), [smoke checks](evidence/2026-11-08-cloud-smoke.json), [monitor snapshot](evidence/2026-11-08-cloud-monitor.json).
+
+## MLOps release control staging (2026-11-10)
+
+Backend commit `9c914987` and frontend commit `ab235fb1` passed CI and reached Render `live`. The admin release/connected-device page was inspected in a real WebKit browser at `/mlops/releases`; it displayed an empty staging channel, disabled activation/rollback buttons and the legacy candidate warning. Monitoring displayed the device fleet and drift fields as `Chưa đủ dữ liệu`. The separate [cloud smoke report](evidence/2026-11-10-release-cloud-smoke.json) passed 20/20 checks, including admin/analyst authorization, legacy release rejection, device token and revocation, prediction, private image, history cleanup and archived benchmark visibility.
+
+The same three images (56–596 KB) were measured again on Render Free with ten warmups per profile. Tagged traffic was removed after immutable reports were archived in private Storage and PostgreSQL.
+
+| Concurrent requests | Measured successes | Throughput | Client p50 | Client p95 | Client p99 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 100/100 | 1.351 req/s | 786 ms | 1.005 s | 1.222 s |
+| 4 | 100/100 | 2.535 req/s | 1.572 s | 2.090 s | 2.266 s |
+| 8 | 100/100 | 2.344 req/s | 3.070 s | 5.216 s | 7.496 s |
+| 4 sustained | 300/300 | 2.334 req/s | 1.652 s | 2.473 s | 3.595 s |
+
+Render's one-minute samples peaked at 0.136 of 0.15 CPU cores and 322 of 537 MB RAM in the benchmark window. Raw reports: [c1](evidence/20261110-free-cloud-c1.json), [c4](evidence/20261110-free-cloud-c4.json), [c8](evidence/20261110-free-cloud-c8.json), [sustained](evidence/20261110-free-cloud-sustained-c4.json), [resource metrics](evidence/20261110-render-resource-metrics.json). These are candidate 1.1.0 service measurements, not proof of model correctness. The data release gate is still blocked and no production service was started.

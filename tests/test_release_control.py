@@ -151,6 +151,9 @@ class ReleaseControlTest(unittest.TestCase):
                 model_version="2.0.0", dataset_version="2.0.0",
                 recorded_at=datetime.now(timezone.utc), object_prefix="development/runs/approved-1/",
                 record_sha256="a" * 64, summary_json="{}"))
+            db.add(ReleaseEvent(channel="development", environment="development", action="activate",
+                from_run_id=None, to_run_id="approved-1", generation=1, actor="admin",
+                reason="approved model", occurred_at=datetime.now(timezone.utc)))
             db.commit()
             event = {"event_id": str(uuid.uuid4()), "run_id": "approved-1",
                      "prediction": "INR_10", "confidence": 0.8,

@@ -1,0 +1,29 @@
+{
+  "checked_at": "2026-11-10T11:48:16.378433+00:00",
+  "backend_commit": "9c914987adde55c885a5277641733196ea7309db",
+  "frontend_commit": "ab235fb1f29bc84c4e6cd97482e7dce5005d3299",
+  "environment": "staging",
+  "checks": {
+    "ready": true,
+    "admin_channels": true,
+    "analyst_forbidden": true,
+    "guest_forbidden": true,
+    "legacy_release_rejected": true,
+    "device_registered": true,
+    "device_requires_token": true,
+    "empty_channel_no_release": true,
+    "unapproved_telemetry_rejected": true,
+    "legacy_device_telemetry_rejected": true,
+    "device_revoked": true,
+    "revoked_token_denied": true,
+    "predict": true,
+    "history": true,
+    "private_image": true,
+    "invalid_image_signature": true,
+    "monitor": true,
+    "runs": true,
+    "benchmarks": true,
+    "prediction_cleanup": true
+  },
+  "passed": true
+}

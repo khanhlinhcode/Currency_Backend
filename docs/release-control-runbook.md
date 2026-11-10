@@ -48,3 +48,16 @@ The rollback path is implemented and locally tested for generation safety. A clo
 - Raw dataset review remains pending for 10,106 images; the legacy split has 182 duplicate groups crossing splits and two conflicting-label groups. No release channel has an approved run, so the dashboard correctly shows no deployable model.
 - No physical device is connected. Device artifact and telemetry flows have local contract tests; cloud smoke checks verify access control and the empty-channel behavior. A real firmware integration and two-version rollback drill remain necessary.
 - The separate cloud backup bucket, actual Supabase restore drill, production isolation, retention policy for evidence images and independent alert receiver are not yet complete. The local PostgreSQL restore drill is evidence of script behavior only.
+
+### Provisional Render Free regression targets
+
+These thresholds are calibrated from one measurement day. They are a future warm-test regression screen, **not** an uptime or production latency promise. Use the same three-image mix, ten warmups, region and Free plan; measure cold start separately.
+
+| Profile | Minimum measured requests | Client p95 max | Client p99 max | Throughput min | Success rate |
+|---|---:|---:|---:|---:|---:|
+| 1 concurrent | 100 | 1.5 s | 2.2 s | 1.0 req/s | 100% |
+| 4 concurrent | 100 | 3.0 s | 4.5 s | 2.0 req/s | 100% |
+| 8 concurrent | 100 | 6.5 s | 9.0 s | 1.8 req/s | 100% |
+| 4 concurrent, sustained | 300 | 3.2 s | 4.8 s | 1.8 req/s | 100% |
+
+Recalibrate after multiple days and real traffic before setting a production SLO.
