@@ -72,13 +72,19 @@ class ReleaseControlTest(unittest.TestCase):
         digest = hashlib.sha256(model).hexdigest()
         payloads = {
             "manifest": {**MODEL_MANIFEST, "version": "2.0.0", "sha256": digest,
-                         "release_status": "approved", "dataset_version": "2.0.0"},
+                         "release_status": "approved", "dataset_version": "2.0.0",
+                         "dataset_manifest_sha256": "b" * 64},
             "audit": {"dataset_version": "2.0.0", "dataset_manifest_sha256": "b" * 64,
                       "dataset_manifest_verified": True, "human_review_complete": False,
+                      "class_sets_match": True,
                       "group_split_verified": True, "exact_cross_split_duplicates": 0,
                       "conflicting_label_groups": 0},
-            "release_gate": {"passed": True, "gates_sha256": "c" * 64},
-            "evaluation": {"accuracy": 0.99}, "quality_gates": {"locked": True},
+            "release_gate": {"passed": True, "checks": {"audit": True},
+                             "model_version": "2.0.0", "dataset_version": "2.0.0",
+                             "gates_sha256": "c" * 64},
+            "evaluation": {"accuracy": 0.99, "model_version": "2.0.0",
+                           "model_sha256": digest, "dataset_version": "2.0.0"},
+            "quality_gates": {"locked": True},
         }
         files = {name: {"file": name + ".json", "sha256": hashlib.sha256(json.dumps(value).encode()).hexdigest()}
                  for name, value in payloads.items()}

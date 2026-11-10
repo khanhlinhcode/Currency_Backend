@@ -91,7 +91,7 @@ def verified_release(db, run_id, verify_model=True):
     manifest = json.loads(_archived_file(row, record, "manifest"))
     audit = json.loads(_archived_file(row, record, "audit"))
     gate = json.loads(_archived_file(row, record, "release_gate"))
-    _archived_file(row, record, "evaluation")
+    evaluation = json.loads(_archived_file(row, record, "evaluation"))
     _archived_file(row, record, "quality_gates")
     model_item = record.get("files", {}).get("model_artifact") or {}
     model_hash = model_item.get("sha256")
@@ -109,12 +109,20 @@ def verified_release(db, run_id, verify_model=True):
         or record.get("dataset_version") != audit.get("dataset_version")
         or record.get("dataset_manifest_sha256") != audit.get("dataset_manifest_sha256")
         or not audit.get("dataset_manifest_verified") or not audit.get("human_review_complete")
+        or not audit.get("class_sets_match")
         or not audit.get("group_split_verified") or audit.get("exact_cross_split_duplicates")
         or audit.get("conflicting_label_groups") or not gate.get("passed")
+        or not gate.get("checks") or not all(gate["checks"].values())
+        or gate.get("model_version") != record.get("model_version")
+        or gate.get("dataset_version") != record.get("dataset_version")
         or gate.get("gates_sha256") != record.get("quality_gates_sha256")
         or manifest.get("release_status") != "approved"
         or manifest.get("dataset_version") in {None, "legacy-unversioned"}
+        or manifest.get("dataset_manifest_sha256") != record.get("dataset_manifest_sha256")
         or manifest.get("version") != record.get("model_version")
+        or evaluation.get("model_version") != record.get("model_version")
+        or evaluation.get("model_sha256") != model_hash
+        or evaluation.get("dataset_version") != record.get("dataset_version")
         or manifest.get("sha256") != model_hash or not contract_matches(manifest)):
         raise HTTPException(status_code=409, detail="Run evidence fails release contract")
     return {"row": row, "record": record, "manifest": manifest, "model_sha256": model_hash}
