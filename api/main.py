@@ -366,6 +366,13 @@ def get_current_admin(current_user: User = Depends(get_current_user_record)) -> 
 def startup_seed_admin():
     ensure_default_admin()
     if ENVIRONMENT in {"staging", "production"}:
+        try:
+            runtime_release.sync()
+        except Exception as error:
+            runtime_release.last_error = str(error)
+            logger.exception("initial_approved_model_sync_failed")
+            if ENVIRONMENT == "production":
+                raise
         threading.Thread(target=runtime_release.poll_forever, daemon=True,
                          name="approved-model-poller").start()
 

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, U
 from PIL import Image
 from botocore.exceptions import ClientError
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import ENVIRONMENT, S3_BUCKET, STORAGE_BACKEND
@@ -152,9 +153,9 @@ def _switch(db, name, run_id, expected_generation, actor, reason, action):
                         reason=reason.strip(), occurred_at=now))
     try:
         db.commit()
-    except Exception:
+    except IntegrityError as error:
         db.rollback()
-        raise
+        raise HTTPException(status_code=409, detail="Concurrent release change") from error
     return channel_state(db, name)
 
 
