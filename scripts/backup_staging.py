@@ -1,4 +1,4 @@
-"""Create an encrypted PostgreSQL dump and object manifest in a separate private bucket."""
+"""Create encrypted PostgreSQL and object backups in a separate private bucket."""
 
 import argparse
 import base64
@@ -80,6 +80,33 @@ def put_immutable(client, bucket, key, path):
         raise RuntimeError("Backup upload checksum metadata mismatch")
 
 
+def copy_encrypted_object(client, source_bucket, backup_bucket, item, prefix, temporary, key):
+    """Copy one object with authenticated encryption and verified source size/hash."""
+    original = Path(temporary) / "object.bin"
+    encrypted = Path(temporary) / "object.enc"
+    try:
+        response = client.get_object(Bucket=source_bucket, Key=item["key"])
+        body = response["Body"]
+        with original.open("xb") as target:
+            try:
+                for chunk in body.iter_chunks(chunk_size=1024 * 1024):
+                    if chunk:
+                        target.write(chunk)
+            finally:
+                body.close()
+        if original.stat().st_size != item["size"] or response.get("ETag") != item.get("etag"):
+            raise RuntimeError("Source object changed during backup")
+        plain_digest = sha256(original)
+        encrypt_file(original, encrypted, key)
+        backup_key = prefix + "objects/" + hashlib.sha256(item["key"].encode()).hexdigest() + ".enc"
+        put_immutable(client, backup_bucket, backup_key, encrypted)
+        return {**item, "sha256": plain_digest, "backup_key": backup_key,
+                "encrypted_sha256": sha256(encrypted), "encrypted_bytes": encrypted.stat().st_size}
+    finally:
+        original.unlink(missing_ok=True)
+        encrypted.unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True, help="Private directory outside the Git checkout")
@@ -89,8 +116,8 @@ def main():
     output = args.output_dir.resolve()
     if output == root or root in output.parents:
         parser.error("Backup directory must be outside the repository")
-    if ENVIRONMENT != "staging" or not S3_BUCKET or not args.backup_bucket or args.backup_bucket == S3_BUCKET:
-        parser.error("APP_ENV=staging and a separate private BACKUP_S3_BUCKET are required")
+    if ENVIRONMENT not in {"staging", "production"} or not S3_BUCKET or not args.backup_bucket or args.backup_bucket == S3_BUCKET:
+        parser.error("A deployed APP_ENV and a separate private BACKUP_S3_BUCKET are required")
     if not shutil.which("pg_dump"):
         parser.error("pg_dump must be installed on the backup client")
     key = encryption_key()
@@ -99,6 +126,7 @@ def main():
     destination.mkdir(parents=True, exist_ok=False, mode=0o700)
     client = _s3_client()
     client.head_bucket(Bucket=args.backup_bucket)
+    prefix = f"{ENVIRONMENT}/backups/{run_id}/"
     with tempfile.TemporaryDirectory(prefix="currency-db-backup-") as temporary:
         dump = Path(temporary) / "database.dump"
         with dump.open("wb") as target:
@@ -110,23 +138,27 @@ def main():
             for item in page.get("Contents", []):
                 objects.append({"key": item["Key"], "size": item["Size"],
                                 "etag": item.get("ETag"), "modified_at": item["LastModified"].isoformat()})
+        objects = [copy_encrypted_object(client, S3_BUCKET, args.backup_bucket, item,
+                   prefix, temporary, key) for item in sorted(objects, key=lambda entry: entry["key"])]
         object_manifest = Path(temporary) / "objects.json"
         object_manifest.write_text(json.dumps({"source_bucket": S3_BUCKET,
             "objects": sorted(objects, key=lambda entry: entry["key"])}, ensure_ascii=False), encoding="utf-8")
         encrypt_file(object_manifest, destination / "objects.json.enc", key)
-    report = {"schema_version": 1, "backup_id": run_id,
+    report = {"schema_version": 2, "backup_id": run_id,
               "created_at": datetime.now(timezone.utc).isoformat(),
-              "source_environment": ENVIRONMENT, "object_count": len(objects),
+              "source_environment": ENVIRONMENT, "backup_bucket": args.backup_bucket,
+              "object_count": len(objects), "object_bytes": sum(item["size"] for item in objects),
+              "objects_encrypted": True,
               "encrypted_files": {path.name: {"sha256": sha256(path), "bytes": path.stat().st_size}
                                   for path in destination.glob("*.enc")}}
     manifest_path = destination / "backup-manifest.json"
     manifest_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     manifest_path.chmod(0o600)
-    prefix = f"staging/backups/{run_id}/"
     for path in sorted(destination.iterdir()):
         put_immutable(client, args.backup_bucket, prefix + path.name, path)
     print(json.dumps({"backup_id": run_id, "encrypted_files": list(report["encrypted_files"]),
-                      "object_count": len(objects), "private_backup_bucket": args.backup_bucket}, ensure_ascii=False))
+                      "object_count": len(objects), "object_bytes": report["object_bytes"],
+                      "private_backup_bucket": args.backup_bucket}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

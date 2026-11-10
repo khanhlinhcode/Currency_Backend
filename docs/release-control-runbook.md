@@ -47,7 +47,8 @@ The rollback path is implemented and locally tested for generation safety. A clo
 - During the benchmark window, Render's one-minute samples peaked at 0.136 CPU cores of a 0.15-core limit and 322 MB of a 537 MB memory limit. See [resource evidence](evidence/20261110-render-resource-metrics.json); these are sampled maxima, not instantaneous peaks.
 - Raw dataset review remains pending for 10,106 images; the legacy split has 182 duplicate groups crossing splits and two conflicting-label groups. No release channel has an approved run, so the dashboard correctly shows no deployable model.
 - No physical device is connected. Device artifact and telemetry flows have local contract tests; cloud smoke checks verify access control and the empty-channel behavior. A real firmware integration and two-version rollback drill remain necessary.
-- The separate cloud backup bucket, actual Supabase restore drill, production isolation, retention policy for evidence images and independent alert receiver are not yet complete. The local PostgreSQL restore drill is evidence of script behavior only.
+- The backup script now encrypts every object and a local drill restored one PostgreSQL row plus two objects into an isolated bucket. The separate cloud backup bucket, actual Supabase restore drill, production isolation, retention policy for evidence images and independent alert receiver are not yet complete. [Local evidence](evidence/2026-11-10-local-full-restore-drill.json) verifies script behavior only.
+- The current device updater trusts HTTPS and the server-supplied SHA-256; a real hardware fleet should also verify an offline-signed release manifest and use staged/canary cohorts before a fleet-wide switch. No hardware security or fleet drill has been performed.
 
 ### Provisional Render Free regression targets
 

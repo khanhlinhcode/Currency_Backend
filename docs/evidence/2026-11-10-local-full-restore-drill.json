@@ -1,0 +1,27 @@
+{
+  "backup_id": "20261110T120152Z",
+  "restored_at": "2026-11-10T12:01:53.302066+00:00",
+  "target": "local-isolated-postgresql",
+  "duration_seconds": 0.23,
+  "table_counts": {
+    "prediction_history": 0,
+    "users": 0,
+    "mlops_runs": 0,
+    "mlops_benchmarks": 0,
+    "mlops_monitor_snapshots": 1,
+    "release_channels": 0,
+    "release_events": 0,
+    "device_registrations": 0,
+    "device_prediction_events": 0
+  },
+  "object_manifest_count": 2,
+  "objects_verified": 2,
+  "objects_restored_to_isolated_bucket": 2,
+  "encrypted_hashes_verified": true,
+  "restore_ok": true,
+  "note": "Schema v2 verifies every encrypted object copy; optional isolated bucket restoration is explicit",
+  "test_scope": "local PostgreSQL 16 container and moto S3; no Supabase data or cloud backup",
+  "source_object_count": 2,
+  "backup_schema_version": 2,
+  "restored_test_row_verified": true
+}

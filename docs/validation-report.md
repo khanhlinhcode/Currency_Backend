@@ -106,3 +106,5 @@ The same three images (56–596 KB) were measured again on Render Free with ten 
 | 4 sustained | 300/300 | 2.334 req/s | 1.652 s | 2.473 s | 3.595 s |
 
 Render's one-minute samples peaked at 0.136 of 0.15 CPU cores and 322 of 537 MB RAM in the benchmark window. Raw reports: [c1](evidence/20261110-free-cloud-c1.json), [c4](evidence/20261110-free-cloud-c4.json), [c8](evidence/20261110-free-cloud-c8.json), [sustained](evidence/20261110-free-cloud-sustained-c4.json), [resource metrics](evidence/20261110-render-resource-metrics.json). These are candidate 1.1.0 service measurements, not proof of model correctness. The data release gate is still blocked and no production service was started.
+
+The upgraded backup script was exercised locally with PostgreSQL 16 and moto S3. One nonempty database row and two private objects were encrypted, backed up, authenticated, restored to an isolated database/bucket and verified byte-for-byte in 0.23 seconds for the restore phase. [Full local restore evidence](evidence/2026-11-10-local-full-restore-drill.json). No Supabase backup or restore was performed.
