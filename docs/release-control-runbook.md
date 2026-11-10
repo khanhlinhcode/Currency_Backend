@@ -44,6 +44,7 @@ The rollback path is implemented and locally tested for generation safety. A clo
 
 - Dashboard: `https://currency-ai-free-dashboard.onrender.com/mlops/releases` (admin login). API: `https://currency-ai-free-staging.onrender.com`.
 - Four archived warm/sustained benchmark reports are under `docs/evidence/20261110-free-cloud-*.json` and in the private MLOps registry. All measured requests succeeded. These measurements use the **candidate 1.1.0** model and measure service speed, not classification quality.
+- During the benchmark window, Render's one-minute samples peaked at 0.136 CPU cores of a 0.15-core limit and 322 MB of a 537 MB memory limit. See [resource evidence](evidence/20261110-render-resource-metrics.json); these are sampled maxima, not instantaneous peaks.
 - Raw dataset review remains pending for 10,106 images; the legacy split has 182 duplicate groups crossing splits and two conflicting-label groups. No release channel has an approved run, so the dashboard correctly shows no deployable model.
 - No physical device is connected. Device artifact and telemetry flows have local contract tests; cloud smoke checks verify access control and the empty-channel behavior. A real firmware integration and two-version rollback drill remain necessary.
 - The separate cloud backup bucket, actual Supabase restore drill, production isolation, retention policy for evidence images and independent alert receiver are not yet complete. The local PostgreSQL restore drill is evidence of script behavior only.

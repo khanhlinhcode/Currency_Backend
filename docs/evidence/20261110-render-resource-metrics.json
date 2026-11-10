@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "source": "Render metrics API via connected Render service",
+  "service_id": "srv-dbo7vr1srm7s73b793sg",
+  "service_name": "currency-ai-free-staging",
+  "plan": "free",
+  "region": "singapore",
+  "interval_start": "2026-11-10T11:24:00Z",
+  "interval_end": "2026-11-10T11:37:00Z",
+  "resolution_seconds": 60,
+  "cpu_usage_max_cores": 0.135839,
+  "cpu_limit_cores": 0.15,
+  "memory_usage_max_bytes": 322052100,
+  "memory_limit_bytes": 536870900,
+  "related_reports": [
+    "20261110-free-cloud-c1.json",
+    "20261110-free-cloud-c4.json",
+    "20261110-free-cloud-c8.json",
+    "20261110-free-cloud-sustained-c4.json"
+  ],
+  "note": "One-minute platform samples over the benchmark window; maxima are not per-request peaks."
+}
