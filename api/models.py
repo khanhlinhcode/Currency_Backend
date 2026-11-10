@@ -90,3 +90,66 @@ class ApiErrorEvent(Base):
     path = Column(String(300), nullable=False)
     status_code = Column(Integer, nullable=False)
     occurred_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+
+class ReleaseChannel(Base):
+    __tablename__ = "release_channels"
+
+    name = Column(String(20), primary_key=True)
+    environment = Column(String(20), nullable=False, index=True)
+    active_run_id = Column(String(100), nullable=True)
+    previous_run_id = Column(String(100), nullable=True)
+    generation = Column(Integer, nullable=False, default=0)
+    updated_by = Column(String(50), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ReleaseEvent(Base):
+    __tablename__ = "release_events"
+
+    id = Column(Integer, primary_key=True)
+    channel = Column(String(20), nullable=False, index=True)
+    environment = Column(String(20), nullable=False)
+    action = Column(String(20), nullable=False)
+    from_run_id = Column(String(100), nullable=True)
+    to_run_id = Column(String(100), nullable=False)
+    generation = Column(Integer, nullable=False)
+    actor = Column(String(50), nullable=False)
+    reason = Column(String(500), nullable=False)
+    occurred_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+
+class DeviceRegistration(Base):
+    __tablename__ = "device_registrations"
+
+    id = Column(String(36), primary_key=True)
+    name = Column(String(100), nullable=False)
+    channel = Column(String(20), nullable=False, index=True)
+    environment = Column(String(20), nullable=False)
+    token_sha256 = Column(String(64), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_by = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    reported_run_id = Column(String(100), nullable=True)
+    reported_generation = Column(Integer, nullable=True)
+    reported_status = Column(String(30), nullable=True)
+
+
+class DevicePredictionEvent(Base):
+    __tablename__ = "device_prediction_events"
+
+    event_id = Column(String(36), primary_key=True)
+    device_id = Column(String(36), nullable=False, index=True)
+    environment = Column(String(20), nullable=False, index=True)
+    run_id = Column(String(100), nullable=False, index=True)
+    prediction = Column(String(100), nullable=False)
+    confidence = Column(Float, nullable=False)
+    inference_ms = Column(Float, nullable=True)
+    image_key = Column(String(150), nullable=True)
+    image_sha256 = Column(String(64), nullable=True)
+    observed_at = Column(DateTime(timezone=True), nullable=False)
+    received_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    actual_label = Column(String(100), nullable=True)
+    reviewed_by = Column(String(50), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)

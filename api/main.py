@@ -8,6 +8,7 @@ import hashlib
 import re
 import time
 import uuid
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -28,15 +29,16 @@ from .auth import create_access_token
 from .config import CONFIDENCE_THRESHOLD, CORS_ORIGINS, ENVIRONMENT, INFERENCE_CONCURRENCY, STORAGE_BACKEND, UPLOAD_DIR, validate_production_config
 from .database import SessionLocal, engine
 from .dependencies import get_current_user, get_optional_current_user
-from .inference import CLASS_NAMES, CURRENCY_VALUE, MODEL_MANIFEST, MODEL_VERSION, preprocess_image
-from .model_loader import load_model
-from .models import ApiErrorEvent, MLOpsBenchmark, MLOpsMonitor, MLOpsRun, PredictionHistory, User
+from .inference import CLASS_NAMES, CURRENCY_VALUE, preprocess_image
+from .models import ApiErrorEvent, DevicePredictionEvent, DeviceRegistration, MLOpsBenchmark, MLOpsMonitor, MLOpsRun, PredictionHistory, ReleaseChannel, User
 from .mlops_registry import canonical_bytes, register_benchmark, register_monitor, register_run
-from .monitoring import assess as assess_monitoring
+from .monitoring import assess as assess_monitoring, jensen_shannon
 from .schemas import PredictionResponse, PredictionReview, UserCreate, UserOut, UserUpdate
 from .security import hash_password, verify_password
 from .users import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME
 from .storage import _s3_client, delete_image, image_url as stored_image_url, save_image, valid_image_signature
+from .release_control import router as release_router
+from .runtime_release import RuntimeRelease
 
 
 # =====================================================
@@ -70,6 +72,7 @@ app = FastAPI(
     version="2.0.0",
     description="AI-powered currency recognition API with versioned model releases",
 )
+app.include_router(release_router)
 
 
 def record_api_error(request_id: str, path: str, status_code: int):
@@ -119,7 +122,7 @@ app.add_middleware(
 # =====================================================
 # LOAD MODEL ONCE
 # =====================================================
-model = load_model()
+runtime_release = RuntimeRelease()
 inference_slots = asyncio.Semaphore(INFERENCE_CONCURRENCY)
 
 
@@ -228,7 +231,7 @@ def serialize_history_record(record: PredictionHistory):
         "queue_time": record.queue_time,
         "processing_time": record.processing_time,
         "model_version": record.model_version,
-        "legacy_unverified": record.model_version != MODEL_VERSION,
+        "legacy_unverified": record.model_version != runtime_release.snapshot()[1]["version"],
         "actual_label": record.actual_label,
         "reviewed_by": record.reviewed_by,
         "reviewed_at": record.reviewed_at,
@@ -362,6 +365,9 @@ def get_current_admin(current_user: User = Depends(get_current_user_record)) -> 
 @app.on_event("startup")
 def startup_seed_admin():
     ensure_default_admin()
+    if ENVIRONMENT in {"staging", "production"}:
+        threading.Thread(target=runtime_release.poll_forever, daemon=True,
+                         name="approved-model-poller").start()
 
 
 # =====================================================
@@ -382,7 +388,8 @@ def ready():
     try:
         with engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1")
-        return {"status": "ready", "model_version": MODEL_VERSION}
+        return {"status": "ready", "model_version": runtime_release.snapshot()[1]["version"],
+                "active_run_id": runtime_release.run_id()}
     except Exception as error:
         logger.exception("readiness_failed")
         raise HTTPException(status_code=503, detail="Service not ready") from error
@@ -544,17 +551,18 @@ def delete_user(
 # =====================================================
 @app.get("/model-info")
 def model_info(_current_user: User = Depends(get_current_user_record)):
+    manifest = runtime_release.snapshot()[1]
     return {
-        "model_name": MODEL_MANIFEST["architecture"],
-        "model_version": MODEL_VERSION,
-        "release_status": MODEL_MANIFEST.get("release_status"),
-        "architecture": MODEL_MANIFEST["architecture"],
-        "framework": MODEL_MANIFEST["framework"],
-        "dataset_version": MODEL_MANIFEST["dataset_version"],
-        "test_metrics": MODEL_MANIFEST.get("test_metrics"),
+        "model_name": manifest["architecture"],
+        "model_version": manifest["version"],
+        "release_status": manifest.get("release_status"),
+        "architecture": manifest["architecture"],
+        "framework": manifest["framework"],
+        "dataset_version": manifest["dataset_version"],
+        "test_metrics": manifest.get("test_metrics"),
         "num_classes": len(CLASS_NAMES),
         "classes": CLASS_NAMES,
-        "input_size": "x".join(str(value) for value in MODEL_MANIFEST["input_size"]),
+        "input_size": "x".join(str(value) for value in manifest["input_size"]),
         "confidence_threshold": CONFIDENCE_THRESHOLD,
     }
 
@@ -767,9 +775,11 @@ def current_mlops_monitoring(_current_admin: User = Depends(get_current_admin),
 
     targets_path = Path(__file__).resolve().parents[1] / "docs/free-staging-monitor-targets.json"
     targets = json.loads(targets_path.read_text(encoding="utf-8"))
+    serving_manifest = runtime_release.snapshot()[1]
+    serving_version = serving_manifest["version"]
     operational = stats(_current_user=_current_admin, db=db)
     rows = (db.query(PredictionHistory.prediction, PredictionHistory.confidence)
-            .filter(PredictionHistory.model_version == MODEL_VERSION,
+            .filter(PredictionHistory.model_version == serving_version,
                     PredictionHistory.requested_by.notlike("benchmark:%"))
             .order_by(PredictionHistory.id.desc()).limit(1000).all())
     predictions = [{"prediction": row.prediction, "confidence": row.confidence,
@@ -784,9 +794,9 @@ def current_mlops_monitoring(_current_admin: User = Depends(get_current_admin),
         except Exception:
             logger.exception("storage_usage_probe_failed")
     baseline = None
-    if MODEL_MANIFEST.get("release_status") == "approved":
+    if serving_manifest.get("release_status") == "approved":
         approved = (db.query(MLOpsRun).filter(MLOpsRun.environment == ENVIRONMENT,
-                    MLOpsRun.model_version == MODEL_VERSION, MLOpsRun.status == "approved")
+                    MLOpsRun.model_version == serving_version, MLOpsRun.status == "approved")
                     .order_by(MLOpsRun.recorded_at.desc()).first())
         if approved:
             audit_bytes, _ = _run_artifact(approved, "audit")
@@ -797,8 +807,65 @@ def current_mlops_monitoring(_current_admin: User = Depends(get_current_admin),
                 baseline = {"class_counts": audit["counts"]["test"],
                             "accepted_coverage": evaluation["accepted_coverage"]}
     assessed = assess_monitoring(operational, predictions, baseline, errors_24h, storage_bytes, targets)
+    release_channel = db.get(ReleaseChannel, ENVIRONMENT)
+    devices = db.query(DeviceRegistration).filter(DeviceRegistration.environment == ENVIRONMENT,
+        DeviceRegistration.is_active.is_(True)).all()
+    active_run = release_channel.active_run_id if release_channel else None
+    offline_before = datetime.utcnow() - timedelta(minutes=targets.get("device_offline_minutes", 20))
+    offline_devices = sum(device.last_seen_at is None or device.last_seen_at.replace(tzinfo=None) < offline_before
+                          for device in devices)
+    outdated_devices = sum(device.reported_run_id != active_run for device in devices) if active_run else 0
+    device_quality = {"status": "insufficient_data", "sample_size": 0,
+                      "low_confidence_rate": None, "distribution_js_divergence": None,
+                      "reviewed_count": 0, "reviewed_accuracy": None}
+    if active_run:
+        device_rows = (db.query(DevicePredictionEvent)
+            .filter(DevicePredictionEvent.environment == ENVIRONMENT,
+                    DevicePredictionEvent.run_id == active_run)
+            .order_by(DevicePredictionEvent.received_at.desc()).limit(1000).all())
+        device_quality["sample_size"] = len(device_rows)
+        reviewed = [row for row in device_rows if row.actual_label is not None]
+        device_quality["reviewed_count"] = len(reviewed)
+        if len(reviewed) >= targets["minimum_reviewed_samples"]:
+            device_quality["reviewed_accuracy"] = round(
+                sum(row.prediction == row.actual_label for row in reviewed) / len(reviewed), 6)
+        if device_rows:
+            device_quality["low_confidence_rate"] = round(
+                sum(row.confidence < CONFIDENCE_THRESHOLD for row in device_rows) / len(device_rows), 6)
+        approved_run = db.get(MLOpsRun, active_run)
+        if approved_run and len(device_rows) >= targets["minimum_model_samples"]:
+            audit_bytes, _ = _run_artifact(approved_run, "audit")
+            evaluation_bytes, _ = _run_artifact(approved_run, "evaluation")
+            audit = json.loads(audit_bytes)
+            evaluation = json.loads(evaluation_bytes)
+            if audit.get("dataset_manifest_verified") and audit.get("human_review_complete"):
+                from collections import Counter
+                distribution = Counter(row.prediction for row in device_rows)
+                divergence = jensen_shannon(distribution, audit["counts"]["test"])
+                device_quality["distribution_js_divergence"] = divergence
+                baseline_low = 1 - evaluation["accepted_coverage"]
+                degraded = (device_quality["low_confidence_rate"] > baseline_low + targets["max_low_confidence_increase"]
+                            or divergence is not None and divergence > targets["warning_distribution_js"])
+                device_quality["status"] = "warning" if degraded else "healthy"
+                if degraded:
+                    assessed["reasons"].append("Device prediction distribution requires investigation")
+                    if assessed["status"] != "critical":
+                        assessed["status"] = "warning"
+    if active_run and (offline_devices or outdated_devices):
+        assessed["reasons"].append("Device fleet has offline or outdated installations")
+        if assessed["status"] != "critical":
+            assessed["status"] = "warning"
+    if active_run and runtime_release.run_id() != active_run:
+        assessed["reasons"].append("API serving model has not synchronized with release channel")
+        if assessed["status"] != "critical":
+            assessed["status"] = "warning"
     return {"checked_at": datetime.now(timezone.utc).isoformat(), "environment": ENVIRONMENT,
-            "model_version": MODEL_VERSION, "release_status": MODEL_MANIFEST.get("release_status"),
+            "model_version": serving_version, "release_status": serving_manifest.get("release_status"),
+            "serving_run_id": runtime_release.run_id(),
+            "serving_update_error": runtime_release.last_error,
+            "channel_active_run_id": active_run,
+            "device_total": len(devices), "device_offline": offline_devices,
+            "device_outdated": outdated_devices, "device_quality": device_quality,
             "thresholds": {key: value for key, value in targets.items() if key != "note"}, **assessed}
 
 
@@ -856,11 +923,13 @@ async def predict(
 
     processed = await run_in_threadpool(preprocess_image, image)
 
+    serving_model, serving_manifest = runtime_release.snapshot()
+    serving_version = serving_manifest["version"]
     queued_at = time.perf_counter()
     async with inference_slots:
         queue_time = round(time.perf_counter() - queued_at, 4)
         start_time = time.perf_counter()
-        preds = (await run_in_threadpool(model.predict, processed, verbose=0))[0]
+        preds = (await run_in_threadpool(serving_model.predict, processed, verbose=0))[0]
         inference_time = round(time.perf_counter() - start_time, 4)
 
     top3_idx = preds.argsort()[-3:][::-1]
@@ -890,7 +959,7 @@ async def predict(
         "inference_time": inference_time,
         "queue_time": queue_time,
         "processing_time": 0.0,
-        "model_version": MODEL_VERSION,
+        "model_version": serving_version,
         "top3": top3,
     }
 
@@ -909,7 +978,7 @@ async def predict(
         estimated_value=CURRENCY_VALUE.get(predicted_class, 0),
         inference_time=inference_time,
         queue_time=queue_time,
-        model_version=MODEL_VERSION,
+        model_version=serving_version,
         requested_by=requested_by,
         currency_category=currency_category,
         created_at=datetime.utcnow(),
@@ -936,7 +1005,7 @@ async def predict(
         predicted_class,
         confidence,
         suspicious,
-        MODEL_VERSION,
+        serving_version,
         queue_time,
         inference_time,
         record.processing_time,
@@ -1101,7 +1170,8 @@ def stats(
     db: Session = Depends(get_db),
 ):
     operational_records = PredictionHistory.requested_by.notlike("benchmark:%")
-    current_records = and_(PredictionHistory.model_version == MODEL_VERSION, operational_records)
+    serving_version = runtime_release.snapshot()[1]["version"]
+    current_records = and_(PredictionHistory.model_version == serving_version, operational_records)
     total_predictions = db.query(func.count(PredictionHistory.id)).filter(current_records).scalar() or 0
     legacy_predictions = (db.query(func.count(PredictionHistory.id)).filter(operational_records).scalar() or 0) - total_predictions
     suspicious_count = (
@@ -1166,7 +1236,7 @@ def stats(
         "country_distribution": country_distribution,
         "predictions_per_day": [{"date": str(day), "count": count} for day, count in daily_rows],
         "suspicious_trend": [{"date": str(day), "count": suspicious_daily.get(day, 0)} for day, _ in daily_rows],
-        "model_version": MODEL_VERSION,
+        "model_version": serving_version,
         "latency_sample_size": len(recent),
         "inference_latency_sample_size": sum(row[1] is not None for row in recent),
         "inference_latency": summarize_latency([row[0] for row in recent if row[1] is not None]),

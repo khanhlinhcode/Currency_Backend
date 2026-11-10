@@ -59,6 +59,8 @@ For an application rollback, retain the previous Render deploy and immutable `MO
 
 ## 6. Acceptance and current limits
 
+The connected-device and no-code release workflow is described in [release-control-runbook.md](release-control-runbook.md). Admins can switch only approved model runs through the dashboard; the API and online devices then poll the channel. Monitoring warnings require investigation and human approval before a new model is activated.
+
 After each deploy, check admin/analyst authorization; prediction, review, private image viewing; run/benchmark/monitor pages; and the daily monitor. Use three images from different classes and sizes, ten warmups and 100 measured requests each at concurrency 1, 4 and 8. Save a separate cold-start measurement and a sustained-load report with commit, Render plan, model hash, error rate, throughput and p50/p95/p99. Purge benchmark traffic after preserving the reports. Do not apply paid-plan targets to Render Free.
 
 The admin-only `DELETE /mlops/benchmark-traffic/{benchmark_run_id}` deletes records and private images only when the matching benchmark report is already in the registry. Repeating cleanup is safe and does not delete the retained report.

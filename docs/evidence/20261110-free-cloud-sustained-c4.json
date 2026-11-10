@@ -1,0 +1,55 @@
+{
+  "measured_at": "2026-11-10T11:31:07.356534+00:00",
+  "benchmark_run_id": "4ec0ed78-4997-496f-9174-d64e0d0f1c2d",
+  "url": "https://currency-ai-free-staging.onrender.com/predict",
+  "runs": 300,
+  "warmups": 10,
+  "concurrency": 4,
+  "image_count": 3,
+  "unique_image_count": 3,
+  "image_bytes_min": 55973,
+  "image_bytes_max": 596281,
+  "warmup_errors": 0,
+  "successes": 300,
+  "errors": 0,
+  "success_rate": 1.0,
+  "status_counts": {
+    "200": 300
+  },
+  "error_examples": [],
+  "model_versions": [
+    "1.1.0"
+  ],
+  "wall_seconds": 128.54,
+  "throughput_rps": 2.334,
+  "latency_ms": {
+    "mean": 1704.62,
+    "p50": 1651.77,
+    "p95": 2473.21,
+    "p99": 3595.23
+  },
+  "server_processing_ms": {
+    "mean": 914.74,
+    "p50": 885.8,
+    "p95": 1435.4,
+    "p99": 2016.1
+  },
+  "queue_ms": {
+    "mean": 107.91,
+    "p50": 0.4,
+    "p95": 419.6,
+    "p99": 787.3
+  },
+  "inference_ms": {
+    "mean": 286.33,
+    "p50": 291.7,
+    "p95": 457.5,
+    "p99": 795.4
+  },
+  "git_commit": "30391299d83aa61ac6062fa785ec2612485b8f75",
+  "model_sha256": "688efeec9b612d6777f450e63c75803f6705b2cb9eddf5518465b288f696f45e",
+  "render_service": "currency-ai-free-staging",
+  "render_plan": "free",
+  "environment": "staging",
+  "benchmark_kind": "sustained"
+}

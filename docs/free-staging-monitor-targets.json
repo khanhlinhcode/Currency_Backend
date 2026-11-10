@@ -9,5 +9,6 @@
   "max_low_confidence_increase": 0.10,
   "warning_distribution_js": 0.15,
   "warning_storage_bytes": 800000000,
+  "device_offline_minutes": 20,
   "note": "Provisional Render Free demonstration thresholds; cold start is measured separately"
 }
