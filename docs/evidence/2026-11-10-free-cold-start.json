@@ -1,0 +1,29 @@
+{
+  "measured_at_utc": "2026-11-10T12:17:55.769228+00:00",
+  "service": "currency-ai-free-staging",
+  "render_plan": "Free 0.15 CPU / 512 MiB",
+  "deployed_commit": "5a5b1dbe19104d7ecf93766b01574ba92a0cd069",
+  "spin_down_evidence": "Render app log: Shutting down at 2026-11-10T12:14:15.31453506Z",
+  "method": "Client wall-clock GET /ready from macOS; urllib; includes DNS, TLS, proxy wake-up and response",
+  "requests": [
+    {
+      "kind": "first_after_confirmed_spin_down",
+      "started_at_utc": "2026-11-10T12:17:02.810022+00:00",
+      "elapsed_ms": 52688.06,
+      "http_status": 200,
+      "ready_status": "ready",
+      "model_version": "1.1.0",
+      "error": null
+    },
+    {
+      "kind": "immediate_warm",
+      "started_at_utc": "2026-11-10T12:17:55.506686+00:00",
+      "elapsed_ms": 262.46,
+      "http_status": 200,
+      "ready_status": "ready",
+      "model_version": "1.1.0",
+      "error": null
+    }
+  ],
+  "limitations": "Single cold-start observation, not a latency distribution or SLA"
+}

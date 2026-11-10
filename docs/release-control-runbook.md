@@ -45,6 +45,7 @@ The rollback path is implemented and locally tested for generation safety. A clo
 - Dashboard: `https://currency-ai-free-dashboard.onrender.com/mlops/releases` (admin login). API: `https://currency-ai-free-staging.onrender.com`.
 - Four archived warm/sustained benchmark reports are under `docs/evidence/20261110-free-cloud-*.json` and in the private MLOps registry. All measured requests succeeded. These measurements use the **candidate 1.1.0** model and measure service speed, not classification quality.
 - During the benchmark window, Render's one-minute samples peaked at 0.136 CPU cores of a 0.15-core limit and 322 MB of a 537 MB memory limit. See [resource evidence](evidence/20261110-render-resource-metrics.json); these are sampled maxima, not instantaneous peaks.
+- Render logged an actual Free-instance shutdown at 12:14:15 UTC. The first `/ready` request after that shutdown took **52.688 s** from the client; the immediately following request took **0.262 s**. Both returned HTTP 200. This is one cold-start observation, not a latency distribution or availability guarantee. [Cold-start evidence](evidence/2026-11-10-free-cold-start.json).
 - Raw dataset review remains pending for 10,106 images; the legacy split has 182 duplicate groups crossing splits and two conflicting-label groups. No release channel has an approved run, so the dashboard correctly shows no deployable model.
 - No physical device is connected. Device artifact and telemetry flows have local contract tests; cloud smoke checks verify access control and the empty-channel behavior. A real firmware integration and two-version rollback drill remain necessary.
 - The backup script now encrypts every object and a local drill restored one PostgreSQL row plus two objects into an isolated bucket. The separate cloud backup bucket, actual Supabase restore drill, production isolation, retention policy for evidence images and independent alert receiver are not yet complete. [Local evidence](evidence/2026-11-10-local-full-restore-drill.json) verifies script behavior only.
@@ -52,7 +53,7 @@ The rollback path is implemented and locally tested for generation safety. A clo
 
 ### Provisional Render Free regression targets
 
-These thresholds are calibrated from one measurement day. They are a future warm-test regression screen, **not** an uptime or production latency promise. Use the same three-image mix, ten warmups, region and Free plan; measure cold start separately.
+These thresholds are calibrated from one measurement day. They are a future warm-test regression screen, **not** an uptime or production latency promise. Use the same three-image mix, ten warmups, region and Free plan; keep cold-start latency separate from warm predictions.
 
 | Profile | Minimum measured requests | Client p95 max | Client p99 max | Throughput min | Success rate |
 |---|---:|---:|---:|---:|---:|

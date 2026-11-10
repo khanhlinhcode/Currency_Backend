@@ -94,7 +94,7 @@ Cloud evidence: [deployment snapshot](evidence/2026-11-08-deployment-snapshot.js
 
 ## MLOps release control staging (2026-11-10)
 
-Backend commit `9c914987` and frontend commit `ab235fb1` passed CI and reached Render `live`. The admin release/connected-device page was inspected in a real WebKit browser at `/mlops/releases`; it displayed an empty staging channel, disabled activation/rollback buttons and the legacy candidate warning. Monitoring displayed the device fleet and drift fields as `Chưa đủ dữ liệu`. The separate [cloud smoke report](evidence/2026-11-10-release-cloud-smoke.json) passed 20/20 checks, including admin/analyst authorization, legacy release rejection, device token and revocation, prediction, private image, history cleanup and archived benchmark visibility.
+Backend commit `9c914987` and frontend commit `ab235fb1` passed CI and reached Render `live`; later backend commit `5a5b1dbe` also passed CI and reached `live`. The admin release/connected-device page was inspected in a real WebKit browser at `/mlops/releases`; it displayed an empty staging channel, disabled activation/rollback buttons and the legacy candidate warning. Monitoring displayed the device fleet and drift fields as `Chưa đủ dữ liệu`. The separate [cloud smoke report](evidence/2026-11-10-release-cloud-smoke.json) passed 20/20 checks against the earlier release-control build, including admin/analyst authorization, legacy release rejection, device token and revocation, prediction, private image, history cleanup and archived benchmark visibility.
 
 The same three images (56–596 KB) were measured again on Render Free with ten warmups per profile. Tagged traffic was removed after immutable reports were archived in private Storage and PostgreSQL.
 
@@ -106,5 +106,7 @@ The same three images (56–596 KB) were measured again on Render Free with ten 
 | 4 sustained | 300/300 | 2.334 req/s | 1.652 s | 2.473 s | 3.595 s |
 
 Render's one-minute samples peaked at 0.136 of 0.15 CPU cores and 322 of 537 MB RAM in the benchmark window. Raw reports: [c1](evidence/20261110-free-cloud-c1.json), [c4](evidence/20261110-free-cloud-c4.json), [c8](evidence/20261110-free-cloud-c8.json), [sustained](evidence/20261110-free-cloud-sustained-c4.json), [resource metrics](evidence/20261110-render-resource-metrics.json). These are candidate 1.1.0 service measurements, not proof of model correctness. The data release gate is still blocked and no production service was started.
+
+Render logged a Free-instance shutdown at 12:14:15 UTC. One client request to `/ready` after the shutdown took **52.688 s**; the next request took **0.262 s**, both HTTP 200. [Cold-start evidence](evidence/2026-11-10-free-cold-start.json). This single observation is separate from warm prediction benchmarks and does not establish an SLA.
 
 The upgraded backup script was exercised locally with PostgreSQL 16 and moto S3. One nonempty database row and two private objects were encrypted, backed up, authenticated, restored to an isolated database/bucket and verified byte-for-byte in 0.23 seconds for the restore phase. [Full local restore evidence](evidence/2026-11-10-local-full-restore-drill.json). No Supabase backup or restore was performed.
