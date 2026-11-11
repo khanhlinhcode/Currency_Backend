@@ -1,0 +1,63 @@
+{
+  "checked_at_utc": "2026-11-11T03:26:44.262023+00:00",
+  "deployed_commit": "475edd968bc9576dc47d7c87aad06f0e18830387",
+  "service": "https://currency-ai-free-staging.onrender.com",
+  "checks": [
+    {
+      "check": "ready",
+      "http_status": 200,
+      "elapsed_ms": 52634.34,
+      "model_version": "1.1.0",
+      "active_run_id": null
+    },
+    {
+      "check": "admin_login",
+      "http_status": 200,
+      "elapsed_ms": 1865.63
+    },
+    {
+      "check": "analyst_login",
+      "http_status": 200,
+      "elapsed_ms": 1682.86
+    },
+    {
+      "check": "admin_channels",
+      "http_status": 200,
+      "elapsed_ms": 719.44,
+      "active_run_ids": [
+        null
+      ]
+    },
+    {
+      "check": "analyst_channels_forbidden",
+      "http_status": 403,
+      "elapsed_ms": 154.49
+    },
+    {
+      "check": "guest_channels_forbidden",
+      "http_status": 401,
+      "elapsed_ms": 168.64
+    },
+    {
+      "check": "admin_runs",
+      "http_status": 200,
+      "elapsed_ms": 240.57,
+      "run_count": 1
+    },
+    {
+      "check": "admin_benchmarks",
+      "http_status": 200,
+      "elapsed_ms": 187.03,
+      "benchmark_count": 7
+    },
+    {
+      "check": "admin_monitoring",
+      "http_status": 200,
+      "elapsed_ms": 785.13,
+      "status": "insufficient_data"
+    }
+  ],
+  "passed": 9,
+  "total": 9,
+  "scope": "Read-only API smoke after deployment; no prediction or storage mutation"
+}

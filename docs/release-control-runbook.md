@@ -14,6 +14,8 @@ This is the operational path for a model with the **same input, preprocessing, c
 
 The dashboard activation does not bypass the release gate. It changes only an approved channel pointer. Production and staging should have separate PostgreSQL databases, private buckets, secrets and device credentials; never register a production device against staging.
 
+An administrator without coding skills can activate and roll back an **already approved** run from the dashboard. The current data-review and training steps still use CSV files and command-line tools; there is no browser workflow to curate all 10,106 raw images or launch heavy training. Do not describe the full retraining cycle as no-code. Model degradation opens an investigation in monitoring; it does not automatically train or promote a replacement. This prevents unreviewed traffic labels from silently becoming a new release.
+
 ## Provision a device once
 
 An admin creates a device under **Phát hành & thiết bị**. The token is shown once. Store it in the device secret store, never in Git, an image, a command-line argument or a public log. Example for a Linux device after securely provisioning the token as `CURRENCY_DEVICE_TOKEN`:
@@ -50,6 +52,7 @@ The rollback path is implemented and locally tested for generation safety. A clo
 - No physical device is connected. Device artifact and telemetry flows have local contract tests; cloud smoke checks verify access control and the empty-channel behavior. A real firmware integration and two-version rollback drill remain necessary.
 - The backup script now encrypts every object and a local drill restored one PostgreSQL row plus two objects into an isolated bucket. The separate cloud backup bucket, actual Supabase restore drill, production isolation, retention policy for evidence images and independent alert receiver are not yet complete. [Local evidence](evidence/2026-11-10-local-full-restore-drill.json) verifies script behavior only.
 - The current device updater trusts HTTPS and the server-supplied SHA-256; a real hardware fleet should also verify an offline-signed release manifest and use staged/canary cohorts before a fleet-wide switch. No hardware security or fleet drill has been performed.
+- On 2026-11-11 the live backend passed 9/9 read-only API smoke checks after commit `475edd96`; the channel was empty and monitoring reported `insufficient_data`. [Post-deploy evidence](evidence/2026-11-11-final-staging-smoke.json).
 
 ### Provisional Render Free regression targets
 
