@@ -8,6 +8,8 @@ Trên macOS, nhấp đúp `scripts/start-data-review.command` trong Finder. Trì
 
 Trang đầu hiển thị tổng ảnh, số đã duyệt, số còn thiếu và nhãn mâu thuẫn. Có ô tìm, bộ lọc và phân trang. Mở một ảnh để xem ảnh gốc, nhãn gốc và các bản sao có cùng hash. **Hash và tên file không chứng minh hai ảnh là cùng tờ tiền vật lý hoặc phiên chụp.** Người duyệt phải đối chiếu hồ sơ nguồn gốc rồi mới nhập `group_id`; nếu không có chứng cứ, để trống và ghi chú. Với ảnh có nhãn mâu thuẫn, chọn `reviewed_label` sau khi kiểm tra. Không chọn tùy tiện để vượt cổng phát hành.
 
+Nếu đã có hồ sơ nguồn cho nhiều ảnh, dùng [công cụ nhập duyệt theo lô](batch-data-review.md) thay vì bấm từng dòng. Luôn kiểm tra bảng trước khi nhập; đóng giao diện cục bộ trong lúc áp dụng CSV và mở lại sau đó.
+
 Trang chi tiết cũng hiện EXIF thời gian/máy ảnh nếu có. Scan hiện tại chỉ thấy 2.188 ảnh INR có timestamp EXIF chung và không có ảnh nào có `DateTimeOriginal`; ảnh VN không có EXIF. Metadata này chỉ giúp tìm hồ sơ chụp, không đủ để khẳng định `group_id`.
 
 Mỗi lần lưu, ứng dụng ghi `reviewed_by` và thời gian UTC, cập nhật `results/group-review.csv`, `results/review-queue.csv` và `results/review-status.json`. Bản sao ban đầu `results/group-review.initial-backup.csv` được tạo trước lần sửa đầu. Ứng dụng từ chối ảnh đã đổi hash, CSV bị sửa bên ngoài, xung đột giữa hai tab và hai bản sao byte có nhãn hoặc `group_id` đã duyệt khác nhau. Chỉ dữ liệu có **100% ảnh đầy đủ** mới qua bước tiếp theo.

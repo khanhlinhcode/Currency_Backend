@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from training.review_queue import generate_review_queue, review_issues
+from training.review_lock import review_file_lock
 
 
 FIELDS = ["path", "current_label", "exact_hash_group", "label_conflict",
@@ -125,7 +126,7 @@ class ReviewStore:
         return None
 
     def save(self, form):
-        with self.lock:
+        with self.lock, review_file_lock(self.review_csv):
             if digest_file(self.review_csv) != self.csv_sha256:
                 raise ValueError("Review CSV changed outside this app. Restart before editing.")
             path = form.get("path", "")

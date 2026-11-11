@@ -36,6 +36,8 @@ The [MLOps v2 runbook](docs/mlops-v2-runbook.md) covers human dataset review, pr
 
 For nontechnical human reviewers, [open the local review interface](docs/data-review-ui.md) with `scripts/start-data-review.command`. It never guesses `group_id`; the one-click finalizer produces a new audited dataset version only after every review is complete.
 
+If a trusted capture ledger or source manifest exists, [import its attested `group_id` mappings in batches](docs/batch-data-review.md). The importer checks image paths and hashes, writes an atomic local CSV with a backup, and leaves images without provenance pending.
+
 ## Deploy and verification
 
 `render.staging.yaml` defines an isolated staging backend and PostgreSQL database; `render.yaml` defines production. Both use the Dockerfile, Alembic migrations, private S3-compatible image/model storage and `/ready` health checks. The frontend uses `VITE_API_URL` and, on staging, `VITE_APP_ENV=staging` to require login before prediction.
