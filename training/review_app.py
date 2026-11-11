@@ -57,6 +57,19 @@ def digest_file(path):
     return sha.hexdigest()
 
 
+def visible_exif(path):
+    """Show limited source metadata as context; never derive a group ID from it."""
+    try:
+        from PIL import Image
+        with Image.open(path) as image:
+            exif = image.getexif()
+        names = ((306, "Thời gian EXIF"), (36867, "Thời gian chụp gốc"),
+                 (271, "Hãng máy ảnh"), (272, "Mẫu máy ảnh"))
+        return [(label, str(exif[tag])[:160]) for tag, label in names if exif.get(tag)]
+    except (ImportError, OSError, ValueError):
+        return []
+
+
 class ReviewStore:
     def __init__(self, raw_root, review_csv, queue_csv, report_json):
         self.raw_root = Path(raw_root).resolve(strict=True)
@@ -253,10 +266,13 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     return self._send(200, image.read_bytes(), IMAGE_TYPES[image.suffix.lower()])
                 duplicates = [item for item in store.rows if item["exact_hash_group"] == row["exact_hash_group"]]
                 duplicate_links = "".join(f'<li><a href="/review?path={urllib.parse.quote(item["path"])}">{esc(item["path"])}</a> · {esc(item["current_label"])}</li>' for item in duplicates)
+                exif = visible_exif(image)
+                exif_list = "".join(f"<li>{esc(label)}: {esc(value)}</li>" for label, value in exif)
+                metadata = f"<ul>{exif_list}</ul>" if exif else '<p class="muted">Không có EXIF hữu ích.</p>'
                 options = '<option value="">Giữ nhãn gốc / chưa quyết định</option>' + "".join(f'<option value="{esc(label)}" {"selected" if row["reviewed_label"] == label else ""}>{esc(label)}</option>' for label in store.labels)
                 issues = ", ".join(review_issues(row)) or "Đã duyệt đủ"
                 body = f'''<a href="/">← Danh sách</a><h1>{esc(row['path'])}</h1><p>Nhãn gốc: <strong>{esc(row['current_label'])}</strong> · Cần xử lý: {esc(issues)}</p>
-                <div class="review-layout"><div class="card"><img class="image" src="/image?path={urllib.parse.quote(path)}" alt="Ảnh cần duyệt"><p class="muted">SHA-256: {esc(row['exact_hash_group'])}</p><h3>Ảnh có cùng nội dung byte ({len(duplicates)})</h3><ul>{duplicate_links}</ul><p class="warning">Các ảnh trùng byte cần nhãn nhất quán, nhưng group_id vẫn phải dựa trên chứng cứ tờ tiền/phiên chụp.</p></div>
+                <div class="review-layout"><div class="card"><img class="image" src="/image?path={urllib.parse.quote(path)}" alt="Ảnh cần duyệt"><p class="muted">SHA-256: {esc(row['exact_hash_group'])}</p><h3>Metadata từ ảnh</h3>{metadata}<p class="muted">EXIF chỉ là ngữ cảnh để tìm hồ sơ nguồn gốc; không tự chứng minh group_id.</p><h3>Ảnh có cùng nội dung byte ({len(duplicates)})</h3><ul>{duplicate_links}</ul><p class="warning">Các ảnh trùng byte cần nhãn nhất quán, nhưng group_id vẫn phải dựa trên chứng cứ tờ tiền/phiên chụp.</p></div>
                 <form class="card" method="post" action="/save"><input type="hidden" name="csrf" value="{esc(self.server.csrf)}"><input type="hidden" name="path" value="{esc(path)}"><input type="hidden" name="expected_reviewed_at" value="{esc(row['reviewed_at'])}">
                 <label>Nhãn đã kiểm tra</label><select name="reviewed_label">{options}</select><p class="muted">Ảnh bị gắn nhãn mâu thuẫn phải chọn nhãn sau khi kiểm tra nguồn gốc.</p>
                 <label>group_id theo tờ tiền vật lý hoặc phiên chụp</label><input name="group_id" value="{esc(row['group_id'])}" maxlength="128" placeholder="Nhập ID từ hồ sơ nguồn gốc"><p class="muted">Để trống nếu chưa có chứng cứ. Không lấy từ tên file hay hash.</p>

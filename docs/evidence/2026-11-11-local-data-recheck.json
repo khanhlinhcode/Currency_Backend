@@ -1,0 +1,65 @@
+{
+  "checked_at_utc": "2026-11-11T04:37:29.976964+00:00",
+  "scope": "Local development environment and current raw/legacy dataset; no labels or group IDs were inferred",
+  "python_environment": {
+    "venv_python": "3.11.16",
+    "venv_repaired_from_missing_homebrew_interpreter": true,
+    "pip_check": "passed",
+    "tensorflow_version": "2.16.2",
+    "tensorflow_import_seconds": 102.36
+  },
+  "tests": {
+    "unittest_count": 26,
+    "result": "passed"
+  },
+  "human_review": {
+    "review_rows": 10106,
+    "complete_rows": 0,
+    "pending_rows": 10106,
+    "pending_label_conflicts": 4,
+    "pending_group_ids": 10106
+  },
+  "legacy_split_audit": {
+    "images": 10106,
+    "exact_cross_split_duplicates": 182,
+    "conflicting_label_groups": 2,
+    "dataset_manifest_verified": false,
+    "human_review_complete": false,
+    "group_split_verified": false
+  },
+  "local_review_ui": {
+    "url": "http://127.0.0.1:8765/",
+    "status_http": 200,
+    "reported_counts": {
+      "total": 10106,
+      "complete": 0,
+      "pending": 10106,
+      "conflicts": 4
+    }
+  },
+  "release_decision": "blocked_until_human_review_and_new_grouped_evaluation",
+  "source_metadata_presence": {
+    "images_with_any_exif": 5638,
+    "images_with_exif_datetime": 2188,
+    "images_with_datetime_original": 0,
+    "images_with_camera_make_model": 2062,
+    "by_country": {
+      "INR": {
+        "images": 3488,
+        "any_exif": 2388,
+        "datetime": 2188
+      },
+      "USA": {
+        "images": 3906,
+        "any_exif": 3250,
+        "datetime": 0
+      },
+      "VN": {
+        "images": 2712,
+        "any_exif": 0,
+        "datetime": 0
+      }
+    },
+    "note": "EXIF presence is diagnostic context only; it cannot establish physical-note or capture-session group IDs without source records"
+  }
+}
