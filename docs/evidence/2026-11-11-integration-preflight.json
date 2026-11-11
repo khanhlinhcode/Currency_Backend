@@ -1,0 +1,51 @@
+{
+  "checked_at_utc": "2026-11-11T14:14:16Z",
+  "backend_commit": "521a5224e933bead3e418627fda58af6ea694d31",
+  "local_integration": {
+    "unittest_passed": 45,
+    "compileall": "passed",
+    "pip_check": "passed",
+    "git_diff_check": "passed"
+  },
+  "github_ci": "completed_success",
+  "render_staging": {
+    "service": "currency-ai-free-staging",
+    "deploy_id": "dep-dbq7fee7bikc73ag1c20",
+    "deploy_status": "live",
+    "backend_ready_http": 200,
+    "dashboard_http": 200,
+    "authenticated_smoke_repeated_for_this_commit": false
+  },
+  "local_review": {
+    "images": 10106,
+    "complete": 0,
+    "pending_group_ids": 10106,
+    "pending_label_conflicts": 0,
+    "legacy_exact_cross_split_duplicate_groups": 182,
+    "dataset_v2_from_real_images": false
+  },
+  "model_release": {
+    "current_version": "1.1.0",
+    "status": "candidate",
+    "approved_run_active_last_verified": null,
+    "active_release_rechecked_for_this_commit": false,
+    "production_release_gate": "blocked"
+  },
+  "backup": {
+    "separate_credentials_and_empty_restore_target_tests": "passed",
+    "local_isolated_pg_and_s3_drill": "passed",
+    "supabase_cloud_backup_restore_verified": false
+  },
+  "device": {
+    "pinned_contract_and_mandatory_self_test_tests": "passed",
+    "physical_device_install_verified": false
+  },
+  "production_blueprint_validation": {
+    "valid": false,
+    "render_errors": [
+      "services[0]: need_payment_info",
+      "databases[0]: need_payment_info"
+    ]
+  },
+  "conclusion": "Staging tooling improved and live; production remains blocked by missing attested data/model quality, unverified cloud recovery/device install, and Render billing"
+}
