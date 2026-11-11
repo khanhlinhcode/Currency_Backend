@@ -4,7 +4,7 @@ This runbook describes the additive MLOps registry and data approval workflow on
 
 ## 1. Human review and dataset v2
 
-The current raw inventory has **10,106 images**, **367 exact-content duplicate groups** and **two conflicting-label groups covering four rows**. `results/review-queue.csv` currently lists **10,106 pending rows** because no physical-banknote/capture-session `group_id` has been attested. These files are local and ignored by Git. The 182 groups crossing the old split are a separate audit finding.
+The raw inventory has **10,106 images**, **367 exact-content duplicate groups** and **two originally conflicting-label groups covering four rows**. The dataset owner confirmed labels for those four rows on 2026-11-11; the local review queue now reports **zero pending label conflicts** but still lists **10,106 pending rows** because no physical-banknote/capture-session `group_id` has been attested. [Decision evidence](evidence/2026-11-11-label-conflict-resolution.json). The review CSV and source images are local and ignored by Git. The 182 groups crossing the old split are a separate audit finding.
 
 ```bash
 python3 training/inventory_raw.py --raw dataset/raw --output results/raw-inventory-v2.json --review-csv results/group-review.csv

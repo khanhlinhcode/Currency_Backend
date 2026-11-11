@@ -20,4 +20,4 @@ Snapshot chỉ được chốt nếu mọi ảnh có thông tin duyệt, nhãn m
 
 ## Trạng thái hiện tại
 
-Ngày 11/11/2026, giao diện đã được xem bằng Playwright WebKit trên tập thật: 10.106 ảnh, 0 ảnh hoàn tất, bốn ảnh thuộc hai nhóm nhãn mâu thuẫn. Không có nhãn hay `group_id` nào được tự điền. [Bằng chứng kiểm tra giao diện](evidence/2026-11-11-local-review-ui-check.json).
+Ngày 11/11/2026, giao diện đã được xem bằng Playwright WebKit trên tập thật: 10.106 ảnh, 0 ảnh hoàn tất, bốn ảnh thuộc hai nhóm nhãn mâu thuẫn ban đầu. [Bằng chứng kiểm tra giao diện](evidence/2026-11-11-local-review-ui-check.json). Sau đó chủ dữ liệu xác nhận nhãn `INR_200` và `INR_2000` cho hai cặp trùng byte; quyết định được ghi vào CSV duyệt cục bộ và [bằng chứng xử lý nhãn](evidence/2026-11-11-label-conflict-resolution.json). Hàng chờ hiện có 0 nhãn mâu thuẫn chưa xử lý nhưng vẫn còn 10.106 ảnh thiếu `group_id`. Ảnh gốc và CSV duyệt không được đưa lên Git hoặc staging.

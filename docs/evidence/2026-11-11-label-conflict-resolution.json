@@ -1,0 +1,48 @@
+{
+  "recorded_at_utc": "2026-11-11T05:22:57.255416+00:00",
+  "decision_source": "Dataset owner confirmed two proposed labels via interactive request on 2026-11-11; Codex entered records locally",
+  "raw_files_unchanged": true,
+  "review_csv_sha256": "5eff792f18081b539fd472565b7e7569f06e69e76288fa4232605a51a5c12021",
+  "review_csv_local_only": true,
+  "decisions": [
+    {
+      "path": "INR/20/20__368.jpg",
+      "original_label": "INR_20",
+      "confirmed_label": "INR_200",
+      "sha256": "6febf5cd8ec8d0867f4e7f29022f0c93d521bff13b7487d3379009304d22127f",
+      "reviewed_by": "dataset-owner-confirmed-in-chat",
+      "reviewed_at": "2026-11-11T05:22:26.344643+00:00",
+      "group_id_attested": false
+    },
+    {
+      "path": "INR/20/20__69.jpg",
+      "original_label": "INR_20",
+      "confirmed_label": "INR_2000",
+      "sha256": "fe9d8bcfc06a081ac5cb36aa9b7db3c7f5a2aa449e3e49cbddf0832db3ea3117",
+      "reviewed_by": "dataset-owner-confirmed-in-chat",
+      "reviewed_at": "2026-11-11T05:22:26.507036+00:00",
+      "group_id_attested": false
+    },
+    {
+      "path": "INR/200/200.__115.jpg",
+      "original_label": "INR_200",
+      "confirmed_label": "INR_200",
+      "sha256": "6febf5cd8ec8d0867f4e7f29022f0c93d521bff13b7487d3379009304d22127f",
+      "reviewed_by": "dataset-owner-confirmed-in-chat",
+      "reviewed_at": "2026-11-11T05:22:26.426678+00:00",
+      "group_id_attested": false
+    },
+    {
+      "path": "INR/2000/2000__60.jpg",
+      "original_label": "INR_2000",
+      "confirmed_label": "INR_2000",
+      "sha256": "fe9d8bcfc06a081ac5cb36aa9b7db3c7f5a2aa449e3e49cbddf0832db3ea3117",
+      "reviewed_by": "dataset-owner-confirmed-in-chat",
+      "reviewed_at": "2026-11-11T05:22:26.585224+00:00",
+      "group_id_attested": false
+    }
+  ],
+  "pending_label_conflicts": 0,
+  "pending_group_ids": 10106,
+  "release_gate": "blocked_pending_group_provenance_and_new_grouped_evaluation"
+}
