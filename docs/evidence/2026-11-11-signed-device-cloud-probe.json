@@ -1,0 +1,17 @@
+{
+  "checked_at_utc": "2026-11-11T04:10:34.161117+00:00",
+  "backend_commit": "062af5c42fc6875dc724ac8a7c9822539f803a22",
+  "service": "https://currency-ai-free-staging.onrender.com",
+  "test_device_id": "86bf4089-8aa6-4fb9-9460-272f2c4ad71c",
+  "registration_http_status": 200,
+  "manifest_http_status": 200,
+  "manifest_status": "no_release",
+  "signature_algorithm": "Ed25519",
+  "signing_key_id": "f9263eaa87ee3d81",
+  "signature_verified_with_pinned_public_key": true,
+  "tampered_generation_rejected": true,
+  "device_revoked": true,
+  "revoked_token_http_status": 401,
+  "approved_model_available": false,
+  "note": "Temporary staging device was revoked; no model artifact or physical hardware was exercised"
+}
