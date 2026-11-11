@@ -24,14 +24,9 @@ def review_issues(row):
     return issues
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--review-csv", type=Path, default=Path("results/group-review.csv"))
-    parser.add_argument("--queue", type=Path, default=Path("results/review-queue.csv"))
-    parser.add_argument("--report", type=Path, default=Path("results/review-status.json"))
-    parser.add_argument("--require-complete", action="store_true")
-    args = parser.parse_args()
-    with args.review_csv.open(newline="", encoding="utf-8") as source:
+def generate_review_queue(review_csv, queue, report):
+    """Refresh the queue/status from the current review CSV and return the status."""
+    with review_csv.open(newline="", encoding="utf-8") as source:
         rows = list(csv.DictReader(source))
     if len({row["path"] for row in rows}) != len(rows):
         raise SystemExit("Duplicate review paths")
@@ -43,19 +38,30 @@ def main():
                             "sha256": row["exact_hash_group"], "issues": ",".join(issues),
                             "reviewed_label": row.get("reviewed_label", ""),
                             "group_id": row.get("group_id", ""), "review_notes": row.get("review_notes", "")})
-    args.queue.parent.mkdir(parents=True, exist_ok=True)
-    with args.queue.open("w", newline="", encoding="utf-8") as target:
+    queue.parent.mkdir(parents=True, exist_ok=True)
+    with queue.open("w", newline="", encoding="utf-8") as target:
         writer = csv.DictWriter(target, fieldnames=["path", "current_label", "sha256", "issues", "reviewed_label", "group_id", "review_notes"])
         writer.writeheader()
         writer.writerows(sorted(pending, key=lambda item: item["path"]))
-    report = {"review_rows": len(rows), "complete_rows": len(rows) - len(pending),
+    status = {"review_rows": len(rows), "complete_rows": len(rows) - len(pending),
               "pending_rows": len(pending), "pending_label_conflicts": sum("label_conflict" in row["issues"] for row in pending),
               "pending_group_ids": sum("group_id" in row["issues"] for row in pending),
-              "queue": str(args.queue), "note": "Only a human with source evidence can attest physical note or capture session groups"}
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False))
-    if args.require_complete and pending:
+              "queue": str(queue), "note": "Only a human with source evidence can attest physical note or capture session groups"}
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return status
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--review-csv", type=Path, default=Path("results/group-review.csv"))
+    parser.add_argument("--queue", type=Path, default=Path("results/review-queue.csv"))
+    parser.add_argument("--report", type=Path, default=Path("results/review-status.json"))
+    parser.add_argument("--require-complete", action="store_true")
+    args = parser.parse_args()
+    status = generate_review_queue(args.review_csv, args.queue, args.report)
+    print(json.dumps(status, ensure_ascii=False))
+    if args.require_complete and status["pending_rows"]:
         raise SystemExit("Human review is incomplete")
 
 

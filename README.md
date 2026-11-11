@@ -34,6 +34,8 @@ The [free staging runbook](docs/free-staging-runbook.md) uses a checksum-pinned 
 
 The [MLOps v2 runbook](docs/mlops-v2-runbook.md) covers human dataset review, pre-registered quality gates, PostgreSQL run metadata, private artifact reports, dashboard monitoring and encrypted backup/restore drills. Its release path stays blocked until physical group IDs and conflicting labels are reviewed.
 
+For nontechnical human reviewers, [open the local review interface](docs/data-review-ui.md) with `scripts/start-data-review.command`. It never guesses `group_id`; the one-click finalizer produces a new audited dataset version only after every review is complete.
+
 ## Deploy and verification
 
 `render.staging.yaml` defines an isolated staging backend and PostgreSQL database; `render.yaml` defines production. Both use the Dockerfile, Alembic migrations, private S3-compatible image/model storage and `/ready` health checks. The frontend uses `VITE_API_URL` and, on staging, `VITE_APP_ENV=staging` to require login before prediction.

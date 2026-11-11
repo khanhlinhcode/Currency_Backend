@@ -1,0 +1,18 @@
+{
+  "checked_at_utc": "2026-11-11T03:49:17Z",
+  "environment": "local macOS, loopback 127.0.0.1:8765",
+  "browser": "Playwright WebKit headed",
+  "raw_images": 10106,
+  "complete_reviews": 0,
+  "pending_reviews": 10106,
+  "pending_conflict_rows": 4,
+  "checks": {
+    "list_page_rendered": true,
+    "real_image_detail_rendered": true,
+    "source_image_visible": true,
+    "review_fields_visible": true,
+    "conflict_filter_showed_four_rows": true,
+    "raw_review_rows_modified": false
+  },
+  "note": "UI inspection only. No physical group IDs or reviewed labels were inferred or entered."
+}
