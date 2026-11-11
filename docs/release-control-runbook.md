@@ -10,7 +10,7 @@ This is the operational path for a model with the **same input, preprocessing, c
 4. Train and evaluate on a suitable training machine using `scripts/run_candidate_pipeline.py`. Verify the grouped audit, per-class recall, calibration, confusion matrix, benchmark and release gate. Export a deployable artifact with `scripts/export_onnx.py` if targeting the free ONNX API or constrained devices, then evaluate and archive evidence for that exact artifact hash. A Keras model can only be activated on a serving environment with compatible TensorFlow installed.
 5. After independent review and an approved run record is archived in private Storage, an admin opens **Phát hành & thiết bị** in the dashboard. Select an approved run, enter a reason and activate it. The server rechecks the archived gate, audit, model bytes and inference contract. Candidate and legacy runs are rejected. The channel uses a generation number to reject stale concurrent edits.
 6. API instances poll the channel every 60 seconds and atomically swap their in-memory model after download, hash verification and loadability checks. In-flight requests keep their original model snapshot. `/ready`, `/model-info`, prediction history and monitoring show the actual serving version. A failed load preserves the previous model and appears in monitoring.
-7. Devices poll every 300 seconds by default, download the channel artifact over HTTPS, verify SHA-256 and atomically replace `current.json`. A local self-test command can be required before pointer replacement. The serving application on the device must watch `current.json` and reload when `generation` changes. This integration is installed once per hardware product; there is no per-model firmware edit.
+7. Devices poll every 300 seconds by default, verify an Ed25519-signed release response against a public key pinned on the device, reject older generations, download over HTTPS, verify SHA-256 and atomically replace `current.json`. A local self-test command can be required before pointer replacement. The serving application on the device must watch `current.json` and reload when `generation` changes. This integration is installed once per hardware product; there is no per-model firmware edit.
 
 The dashboard activation does not bypass the release gate. It changes only an approved channel pointer. Production and staging should have separate PostgreSQL databases, private buckets, secrets and device credentials; never register a production device against staging.
 
@@ -18,7 +18,9 @@ An administrator without coding skills can activate and roll back an **already a
 
 ## Provision a device once
 
-An admin creates a device under **Phát hành & thiết bị**. The token is shown once. Store it in the device secret store, never in Git, an image, a command-line argument or a public log. Example for a Linux device after securely provisioning the token as `CURRENCY_DEVICE_TOKEN`:
+Generate a separate staging/production signing key pair on a trusted machine with `python -m scripts.generate_release_signing_key --directory /private/secure-location --name production`. Put the **private** base64 value in the API secret `CURRENCY_RELEASE_SIGNING_KEY_BASE64`, and provision only the **public** base64 value to devices as `CURRENCY_RELEASE_PUBLIC_KEY_BASE64`. Never put either private key file or token in Git. Production startup requires a valid signing key; staging may omit it, but the device updater refuses unsigned responses. Key rotation requires an explicitly signed device trust-store or firmware update; changing only the API secret would strand deployed devices.
+
+An admin creates a device under **Phát hành & thiết bị**. The token is shown once. Store it in the device secret store, never in Git, an image, a command-line argument or a public log. Install `requirements-device.txt` once. Example for a Linux device after securely provisioning `CURRENCY_DEVICE_TOKEN` and `CURRENCY_RELEASE_PUBLIC_KEY_BASE64`:
 
 ```bash
 python3 scripts/device_updater.py \
@@ -28,7 +30,7 @@ python3 scripts/device_updater.py \
   --self-test /usr/local/bin/currency-model-self-test
 ```
 
-The updater appends the candidate model path to the self-test command. It accepts HTTPS (or localhost for isolated tests), keeps prior releases under `releases/`, and reports `ready` or `failed` by heartbeat. Run it under a service supervisor with restricted file permissions and restart policy. If the network is down or the artifact fails its hash/self-test, the old `current.json` remains active. Revoking the device in the dashboard stops future polls/uploads; it cannot erase a model already stored on an offline device.
+The updater appends the candidate model path to the self-test command. It accepts HTTPS (or localhost for isolated tests), keeps prior releases under `releases/`, and reports `ready` or `failed` by heartbeat. Run it under a service supervisor with restricted file permissions and restart policy. If the network is down, the signed response is invalid/replayed, or the artifact fails its hash/self-test, the old `current.json` remains active. Revoking the device in the dashboard stops future polls/uploads; it cannot erase a model already stored on an offline device.
 
 ## Device prediction evidence
 
@@ -51,7 +53,7 @@ The rollback path is implemented and locally tested for generation safety. A clo
 - Raw dataset review remains pending for 10,106 images; the legacy split has 182 duplicate groups crossing splits and two conflicting-label groups. No release channel has an approved run, so the dashboard correctly shows no deployable model.
 - No physical device is connected. Device artifact and telemetry flows have local contract tests; cloud smoke checks verify access control and the empty-channel behavior. A real firmware integration and two-version rollback drill remain necessary.
 - The backup script now encrypts every object and a local drill restored one PostgreSQL row plus two objects into an isolated bucket. The separate cloud backup bucket, actual Supabase restore drill, production isolation, retention policy for evidence images and independent alert receiver are not yet complete. [Local evidence](evidence/2026-11-10-local-full-restore-drill.json) verifies script behavior only.
-- The current device updater trusts HTTPS and the server-supplied SHA-256; a real hardware fleet should also verify an offline-signed release manifest and use staged/canary cohorts before a fleet-wide switch. No hardware security or fleet drill has been performed.
+- The device updater now checks a pinned Ed25519 release signature, monotonic generation and model SHA-256. These checks have local tests; staging still needs a signing key configured and a signed cloud device probe. A real hardware fleet still needs staged/canary cohorts and a physical rollout/rollback drill. No hardware security or fleet drill has been performed.
 - On 2026-11-11 the live backend passed 9/9 read-only API smoke checks after commit `475edd96`; the channel was empty and monitoring reported `insufficient_data`. [Post-deploy evidence](evidence/2026-11-11-final-staging-smoke.json).
 
 ### Provisional Render Free regression targets

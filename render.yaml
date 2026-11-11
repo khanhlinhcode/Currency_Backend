@@ -36,6 +36,8 @@ services:
         sync: false
       - key: MODEL_S3_KEY
         sync: false
+      - key: CURRENCY_RELEASE_SIGNING_KEY_BASE64
+        sync: false
 
 databases:
   - name: currency-ai-db

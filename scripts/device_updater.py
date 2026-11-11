@@ -16,6 +16,11 @@ import time
 import urllib.request
 from pathlib import Path
 
+try:
+    from .release_signature import verify_payload
+except ImportError:  # Direct invocation: python scripts/device_updater.py
+    from release_signature import verify_payload
+
 
 def request(url, token, payload=None):
     data = json.dumps(payload).encode() if payload is not None else None
@@ -37,23 +42,30 @@ def atomic_json(path, value):
     os.replace(temporary, path)
 
 
-def sync_once(base, device_id, token, state_dir, self_test):
+def sync_once(base, device_id, token, state_dir, self_test, public_key_base64):
     manifest_url = f"{base}/devices/{device_id}/manifest"
     with request(manifest_url, token) as response:
-        release = json.load(response)
+        release = verify_payload(json.load(response), public_key_base64)
+    if (not isinstance(release.get("generation"), int) or isinstance(release["generation"], bool)
+        or release["generation"] < 0):
+        raise ValueError("Invalid release generation")
+    pointer_path = state_dir / "current.json"
+    current = json.loads(pointer_path.read_text()) if pointer_path.exists() else {}
+    if current.get("generation", 0) > release["generation"]:
+        raise ValueError("Stale signed release generation")
     if release.get("status") == "no_release":
         return "no_release"
     run_id = release["run_id"]
     if not re.fullmatch(r"[A-Za-z0-9-]{1,100}", run_id):
         raise ValueError("Invalid release run ID")
+    if release.get("artifact_path") != f"/devices/{device_id}/artifact/{run_id}":
+        raise ValueError("Artifact path is not bound to this device and run")
     suffix = Path(release["model_filename"]).suffix
     if suffix not in {".onnx", ".keras"}:
         raise ValueError("Unsupported model file type")
     expected = release["model_sha256"]
     if not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise ValueError("Invalid model digest")
-    pointer_path = state_dir / "current.json"
-    current = json.loads(pointer_path.read_text()) if pointer_path.exists() else {}
     current_model = Path(current.get("model_path", "")) if current.get("model_path") else None
     if (current.get("generation") == release["generation"] and current.get("model_sha256") == expected
         and current_model and current_model.is_file() and sha256(current_model) == expected):
@@ -116,14 +128,16 @@ def main():
     parser.add_argument("--self-test", nargs="+", help="Command and arguments; model path appended")
     args = parser.parse_args()
     token = os.getenv("CURRENCY_DEVICE_TOKEN", "")
+    public_key = os.getenv("CURRENCY_RELEASE_PUBLIC_KEY_BASE64", "")
     base = args.url.rstrip("/")
-    if not token or (not base.startswith("https://") and not base.startswith("http://127.0.0.1:")):
-        parser.error("Set CURRENCY_DEVICE_TOKEN and use HTTPS (or local test server)")
+    if (not token or not public_key
+        or (not base.startswith("https://") and not base.startswith("http://127.0.0.1:"))):
+        parser.error("Set CURRENCY_DEVICE_TOKEN, pin CURRENCY_RELEASE_PUBLIC_KEY_BASE64 and use HTTPS (or local test server)")
     if args.interval < 60:
         parser.error("Poll interval must be at least 60 seconds")
     while True:
         try:
-            print(sync_once(base, args.device_id, token, args.state_dir, args.self_test), flush=True)
+            print(sync_once(base, args.device_id, token, args.state_dir, args.self_test, public_key), flush=True)
         except Exception as error:
             print(f"update_failed: {error}", flush=True)
             try:

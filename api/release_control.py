@@ -6,6 +6,7 @@ import io
 import importlib.util
 import json
 import math
+import os
 import re
 import secrets
 import uuid
@@ -24,6 +25,7 @@ from .dependencies import get_current_user
 from .inference import CLASS_NAMES, MODEL_MANIFEST
 from .models import DevicePredictionEvent, DeviceRegistration, MLOpsRun, ReleaseChannel, ReleaseEvent, User
 from .storage import _s3_client
+from scripts.release_signature import sign_payload
 
 router = APIRouter()
 CHANNELS = {"staging", "production"}
@@ -251,18 +253,21 @@ def device_manifest(device: DeviceRegistration = Depends(device_auth), db: Sessi
     channel = channel_state(db, device.channel)
     device.last_seen_at = datetime.now(timezone.utc)
     db.commit()
+    signing_key = os.getenv("CURRENCY_RELEASE_SIGNING_KEY_BASE64", "")
     if not channel["active_run_id"]:
-        return {"status": "no_release", "channel": device.channel,
-                "generation": channel["generation"]}
+        payload = {"status": "no_release", "channel": device.channel,
+                   "generation": channel["generation"]}
+        return sign_payload(payload, signing_key) if signing_key else payload
     release = verified_release(db, channel["active_run_id"], verify_model=False)
     record = release["record"]
     model_file = record["files"]["model_artifact"]["file"]
-    return {"status": "available", "channel": device.channel,
+    payload = {"status": "available", "channel": device.channel,
         "generation": channel["generation"], "run_id": record["run_id"],
         "model_version": record["model_version"], "dataset_version": record["dataset_version"],
         "model_sha256": release["model_sha256"], "model_filename": model_file,
         "manifest": release["manifest"],
         "artifact_path": f"/devices/{device.id}/artifact/{record['run_id']}"}
+    return sign_payload(payload, signing_key) if signing_key else payload
 
 
 @router.get("/devices/{device_id}/artifact/{run_id}")

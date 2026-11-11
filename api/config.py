@@ -1,5 +1,7 @@
 """Runtime configuration shared by the API and model loader."""
 
+import base64
+import binascii
 import os
 from pathlib import Path
 
@@ -28,6 +30,14 @@ S3_ACCESS_KEY_ID = os.getenv("S3_ACCESS_KEY_ID", "")
 S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY", "")
 
 
+def release_signing_key_valid():
+    try:
+        return len(base64.b64decode(os.getenv("CURRENCY_RELEASE_SIGNING_KEY_BASE64", ""),
+                                    validate=True)) == 32
+    except binascii.Error:
+        return False
+
+
 def validate_production_config():
     if ENVIRONMENT not in {"staging", "production"}:
         return
@@ -43,6 +53,8 @@ def validate_production_config():
         "S3_SECRET_ACCESS_KEY": bool(S3_SECRET_ACCESS_KEY),
         "MODEL_S3_KEY or MODEL_URL": bool(MODEL_S3_KEY or MODEL_URL),
     }
+    if ENVIRONMENT == "production":
+        required["CURRENCY_RELEASE_SIGNING_KEY_BASE64"] = release_signing_key_valid()
     missing = [name for name, valid in required.items() if not valid]
     if missing:
         raise RuntimeError("Invalid deployed configuration: " + ", ".join(missing))

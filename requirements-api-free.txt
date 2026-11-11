@@ -8,6 +8,7 @@ psycopg[binary]==3.2.6
 alembic==1.15.2
 boto3==1.37.30
 python-jose[cryptography]==3.4.0
+cryptography==44.0.2
 passlib==1.7.4
 bcrypt==3.2.2
 pillow==11.1.0

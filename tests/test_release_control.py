@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import tempfile
@@ -5,6 +6,9 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -15,6 +19,7 @@ from api.inference import MODEL_MANIFEST
 from api.models import DevicePredictionEvent, DeviceRegistration, MLOpsRun, ReleaseEvent
 from api.release_control import _switch, device_events, verified_release
 from scripts.device_updater import sync_once
+from scripts.release_signature import sign_payload
 
 
 class FakeS3:
@@ -122,28 +127,45 @@ class ReleaseControlTest(unittest.TestCase):
         digest = hashlib.sha256(data).hexdigest()
         release = {"status": "available", "run_id": "approved-1", "generation": 1,
                    "model_filename": "model.onnx", "model_sha256": digest,
-                   "artifact_path": "/device/artifact", "manifest": {"version": "2.0.0"}}
+                   "artifact_path": "/devices/id/artifact/approved-1", "manifest": {"version": "2.0.0"}}
+        signing_key = Ed25519PrivateKey.generate()
+        private_b64 = base64.b64encode(signing_key.private_bytes(
+            encoding=serialization.Encoding.Raw, format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption())).decode()
+        public_b64 = base64.b64encode(signing_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)).decode()
         calls = []
+        tamper_signature = False
 
         def fake_request(url, _token, payload=None):
             calls.append((url, payload))
             if url.endswith("/manifest"):
-                return FakeResponse(json.dumps(release).encode())
-            if url.endswith("/device/artifact"):
+                signed = sign_payload(release, private_b64)
+                if tamper_signature:
+                    signed["model_sha256"] = "0" * 64
+                return FakeResponse(json.dumps(signed).encode())
+            if url.endswith("/devices/id/artifact/approved-1"):
                 return FakeResponse(data)
             return FakeResponse(b"{}")
 
         with tempfile.TemporaryDirectory() as temporary, patch("scripts.device_updater.request", fake_request):
             state_dir = Path(temporary)
-            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir, None), "updated")
+            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir, None, public_b64), "updated")
             pointer = json.loads((state_dir / "current.json").read_text())
             self.assertEqual(pointer["model_sha256"], digest)
-            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir, None), "up_to_date")
-            self.assertEqual(sum(url.endswith("/device/artifact") for url, _ in calls), 1)
+            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir, None, public_b64), "up_to_date")
+            self.assertEqual(sum(url.endswith("/devices/id/artifact/approved-1") for url, _ in calls), 1)
+            tamper_signature = True
+            with self.assertRaises(ValueError):
+                sync_once("https://example.test", "id", "token", state_dir, None, public_b64)
+            tamper_signature = False
+            release["generation"] = 0
+            with self.assertRaisesRegex(ValueError, "Stale"):
+                sync_once("https://example.test", "id", "token", state_dir, None, public_b64)
             release["generation"] = 2
             release["model_sha256"] = "f" * 64
             with self.assertRaises(ValueError):
-                sync_once("https://example.test", "id", "token", state_dir, None)
+                sync_once("https://example.test", "id", "token", state_dir, None, public_b64)
             self.assertEqual(json.loads((state_dir / "current.json").read_text()), pointer)
 
     def test_device_telemetry_is_idempotent_and_requires_approved_run(self):
