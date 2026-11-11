@@ -12,6 +12,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from sqlalchemy.engine import make_url
@@ -51,6 +52,22 @@ def encryption_key():
     return key
 
 
+def backup_s3_client():
+    """Use credentials independent from the application's source-object key."""
+    access = os.environ.get("BACKUP_S3_ACCESS_KEY_ID", "")
+    secret = os.environ.get("BACKUP_S3_SECRET_ACCESS_KEY", "")
+    endpoint = os.environ.get("BACKUP_S3_ENDPOINT_URL", "")
+    if not access or not secret or not endpoint:
+        raise ValueError("Dedicated BACKUP_S3_ACCESS_KEY_ID, BACKUP_S3_SECRET_ACCESS_KEY and BACKUP_S3_ENDPOINT_URL are required")
+    if access == os.environ.get("S3_ACCESS_KEY_ID", ""):
+        raise ValueError("Backup S3 access key must differ from the application S3 access key")
+    import boto3
+    return boto3.client("s3", endpoint_url=endpoint,
+                        region_name=os.environ.get("BACKUP_S3_REGION", "auto"),
+                        aws_access_key_id=access, aws_secret_access_key=secret,
+                        config=Config(s3={"addressing_style": "path"}))
+
+
 def encrypt_file(source, destination, key):
     nonce = os.urandom(12)
     encryptor = Cipher(algorithms.AES(key), modes.GCM(nonce)).encryptor()
@@ -80,7 +97,8 @@ def put_immutable(client, bucket, key, path):
         raise RuntimeError("Backup upload checksum metadata mismatch")
 
 
-def copy_encrypted_object(client, source_bucket, backup_bucket, item, prefix, temporary, key):
+def copy_encrypted_object(client, source_bucket, backup_bucket, item, prefix, temporary, key,
+                          backup_client=None):
     """Copy one object with authenticated encryption and verified source size/hash."""
     original = Path(temporary) / "object.bin"
     encrypted = Path(temporary) / "object.enc"
@@ -99,7 +117,7 @@ def copy_encrypted_object(client, source_bucket, backup_bucket, item, prefix, te
         plain_digest = sha256(original)
         encrypt_file(original, encrypted, key)
         backup_key = prefix + "objects/" + hashlib.sha256(item["key"].encode()).hexdigest() + ".enc"
-        put_immutable(client, backup_bucket, backup_key, encrypted)
+        put_immutable(backup_client or client, backup_bucket, backup_key, encrypted)
         return {**item, "sha256": plain_digest, "backup_key": backup_key,
                 "encrypted_sha256": sha256(encrypted), "encrypted_bytes": encrypted.stat().st_size}
     finally:
@@ -124,8 +142,9 @@ def main():
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     destination = output / run_id
     destination.mkdir(parents=True, exist_ok=False, mode=0o700)
-    client = _s3_client()
-    client.head_bucket(Bucket=args.backup_bucket)
+    source_client = _s3_client()
+    backup_client = backup_s3_client()
+    backup_client.head_bucket(Bucket=args.backup_bucket)
     prefix = f"{ENVIRONMENT}/backups/{run_id}/"
     with tempfile.TemporaryDirectory(prefix="currency-db-backup-") as temporary:
         dump = Path(temporary) / "database.dump"
@@ -134,12 +153,13 @@ def main():
                            env=database_environment(DATABASE_URL), stdout=target, check=True)
         encrypt_file(dump, destination / "database.dump.enc", key)
         objects = []
-        for page in client.get_paginator("list_objects_v2").paginate(Bucket=S3_BUCKET):
+        for page in source_client.get_paginator("list_objects_v2").paginate(Bucket=S3_BUCKET):
             for item in page.get("Contents", []):
                 objects.append({"key": item["Key"], "size": item["Size"],
                                 "etag": item.get("ETag"), "modified_at": item["LastModified"].isoformat()})
-        objects = [copy_encrypted_object(client, S3_BUCKET, args.backup_bucket, item,
-                   prefix, temporary, key) for item in sorted(objects, key=lambda entry: entry["key"])]
+        objects = [copy_encrypted_object(source_client, S3_BUCKET, args.backup_bucket, item,
+                   prefix, temporary, key, backup_client=backup_client)
+                   for item in sorted(objects, key=lambda entry: entry["key"])]
         object_manifest = Path(temporary) / "objects.json"
         object_manifest.write_text(json.dumps({"source_bucket": S3_BUCKET,
             "objects": sorted(objects, key=lambda entry: entry["key"])}, ensure_ascii=False), encoding="utf-8")
@@ -155,7 +175,7 @@ def main():
     manifest_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     manifest_path.chmod(0o600)
     for path in sorted(destination.iterdir()):
-        put_immutable(client, args.backup_bucket, prefix + path.name, path)
+        put_immutable(backup_client, args.backup_bucket, prefix + path.name, path)
     print(json.dumps({"backup_id": run_id, "encrypted_files": list(report["encrypted_files"]),
                       "object_count": len(objects), "object_bytes": report["object_bytes"],
                       "private_backup_bucket": args.backup_bucket}, ensure_ascii=False))

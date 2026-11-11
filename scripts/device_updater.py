@@ -42,10 +42,58 @@ def atomic_json(path, value):
     os.replace(temporary, path)
 
 
-def sync_once(base, device_id, token, state_dir, self_test, public_key_base64):
+CONTRACT_FIELDS = ("class_names", "input_size", "preprocessing",
+                   "resize_interpolation", "confidence_threshold")
+
+
+def validate_contract(contract):
+    """A firmware-pinned contract, not a copy of the remote release manifest."""
+    if (not isinstance(contract, dict) or contract.get("schema_version") != 1
+        or contract.get("channel") not in {"staging", "production"}
+        or contract.get("model_format") not in {"onnx", "keras"}
+        or not isinstance(contract.get("class_names"), list)
+        or not contract["class_names"]
+        or any(not isinstance(name, str) or not name for name in contract["class_names"])
+        or len(set(contract["class_names"])) != len(contract["class_names"])
+        or not isinstance(contract.get("input_size"), list)
+        or len(contract["input_size"]) != 2
+        or any(not isinstance(size, int) or isinstance(size, bool) or size <= 0
+               for size in contract["input_size"])
+        or not isinstance(contract.get("preprocessing"), str)
+        or not contract["preprocessing"]
+        or not isinstance(contract.get("resize_interpolation"), str)
+        or not contract["resize_interpolation"]
+        or not isinstance(contract.get("confidence_threshold"), (int, float))
+        or isinstance(contract["confidence_threshold"], bool)
+        or not 0 <= contract["confidence_threshold"] <= 1):
+        raise ValueError("Invalid pinned device contract")
+
+
+def validate_release_contract(release, contract):
+    validate_contract(contract)
+    if release.get("channel") != contract["channel"]:
+        raise ValueError("Release channel differs from pinned device channel")
+    if release.get("status") == "no_release":
+        return
+    manifest = release.get("manifest")
+    if (release.get("status") != "available" or not isinstance(manifest, dict)
+        or any(manifest.get(field) != contract[field] for field in CONTRACT_FIELDS)
+        or not isinstance(release.get("model_filename"), str)
+        or Path(release["model_filename"]).suffix != "." + contract["model_format"]
+        or manifest.get("release_status") != "approved"
+        or manifest.get("sha256") != release.get("model_sha256")
+        or manifest.get("version") != release.get("model_version")
+        or manifest.get("dataset_version") != release.get("dataset_version")
+        or manifest.get("dataset_version") in {None, "legacy-unversioned"}):
+        raise ValueError("Release does not match pinned device contract")
+
+
+def sync_once(base, device_id, token, state_dir, self_test, public_key_base64,
+              expected_contract):
     manifest_url = f"{base}/devices/{device_id}/manifest"
     with request(manifest_url, token) as response:
         release = verify_payload(json.load(response), public_key_base64)
+    validate_release_contract(release, expected_contract)
     if (not isinstance(release.get("generation"), int) or isinstance(release["generation"], bool)
         or release["generation"] < 0):
         raise ValueError("Invalid release generation")
@@ -55,6 +103,8 @@ def sync_once(base, device_id, token, state_dir, self_test, public_key_base64):
         raise ValueError("Stale signed release generation")
     if release.get("status") == "no_release":
         return "no_release"
+    if not self_test:
+        raise ValueError("A local model self-test is required before installation")
     run_id = release["run_id"]
     if not re.fullmatch(r"[A-Za-z0-9-]{1,100}", run_id):
         raise ValueError("Invalid release run ID")
@@ -66,12 +116,17 @@ def sync_once(base, device_id, token, state_dir, self_test, public_key_base64):
     expected = release["model_sha256"]
     if not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise ValueError("Invalid model digest")
+    if (current.get("run_id") == run_id and current.get("model_sha256")
+        and current["model_sha256"] != expected):
+        raise ValueError("Immutable run ID changed model digest")
     current_model = Path(current.get("model_path", "")) if current.get("model_path") else None
     if (current.get("generation") == release["generation"] and current.get("model_sha256") == expected
         and current_model and current_model.is_file() and sha256(current_model) == expected):
         heartbeat(base, device_id, token, "ready", run_id, release["generation"])
         return "up_to_date"
-    destination = state_dir / "releases" / run_id
+    # The hash is part of the path, so a failed replacement cannot modify
+    # bytes referenced by an older current.json, even if a run ID is reused.
+    destination = state_dir / "releases" / run_id / expected
     destination.mkdir(parents=True, exist_ok=True)
     model_path = destination / ("model" + suffix)
     if not model_path.exists() or sha256(model_path) != expected:
@@ -90,11 +145,10 @@ def sync_once(base, device_id, token, state_dir, self_test, public_key_base64):
                 os.replace(temporary, model_path)
             finally:
                 temporary.unlink(missing_ok=True)
-    if self_test:
-        result = subprocess.run([*self_test, str(model_path)], capture_output=True, text=True,
-                                timeout=120, check=False)
-        if result.returncode:
-            raise RuntimeError("Device model self-test failed: " + result.stderr[-300:])
+    result = subprocess.run([*self_test, str(model_path)], capture_output=True, text=True,
+                            timeout=120, check=False)
+    if result.returncode:
+        raise RuntimeError("Device model self-test failed: " + result.stderr[-300:])
     atomic_json(destination / "manifest.json", release["manifest"])
     atomic_json(pointer_path, {"generation": release["generation"], "run_id": run_id,
         "model_sha256": expected, "model_path": str(model_path),
@@ -123,9 +177,12 @@ def main():
     parser.add_argument("--url", required=True)
     parser.add_argument("--device-id", required=True)
     parser.add_argument("--state-dir", type=Path, required=True)
+    parser.add_argument("--contract", type=Path, required=True,
+                        help="Firmware-pinned JSON contract (including channel and model format)")
     parser.add_argument("--interval", type=int, default=300)
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--self-test", nargs="+", help="Command and arguments; model path appended")
+    parser.add_argument("--self-test", nargs="+", required=True,
+                        help="Command and arguments; model path appended")
     args = parser.parse_args()
     token = os.getenv("CURRENCY_DEVICE_TOKEN", "")
     public_key = os.getenv("CURRENCY_RELEASE_PUBLIC_KEY_BASE64", "")
@@ -135,9 +192,15 @@ def main():
         parser.error("Set CURRENCY_DEVICE_TOKEN, pin CURRENCY_RELEASE_PUBLIC_KEY_BASE64 and use HTTPS (or local test server)")
     if args.interval < 60:
         parser.error("Poll interval must be at least 60 seconds")
+    try:
+        expected_contract = json.loads(args.contract.read_text(encoding="utf-8"))
+        validate_contract(expected_contract)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        parser.error(f"Invalid local device contract: {error}")
     while True:
         try:
-            print(sync_once(base, args.device_id, token, args.state_dir, args.self_test, public_key), flush=True)
+            print(sync_once(base, args.device_id, token, args.state_dir, args.self_test,
+                            public_key, expected_contract), flush=True)
         except Exception as error:
             print(f"update_failed: {error}", flush=True)
             try:

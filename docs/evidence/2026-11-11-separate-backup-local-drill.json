@@ -1,0 +1,15 @@
+{
+  "drill_at_utc": "2026-11-11T14:06:28.587739+00:00",
+  "scope": "Isolated local PostgreSQL and moto S3; no Supabase cloud data",
+  "backup_schema_version": 2,
+  "separate_source_and_backup_access_keys": true,
+  "source_database": "temporary local PostgreSQL",
+  "restore_database": "new empty temporary local PostgreSQL",
+  "source_objects": 2,
+  "encrypted_objects_verified": 2,
+  "objects_restored_to_isolated_bucket": 2,
+  "restored_test_rows": 1,
+  "restore_ok": true,
+  "cloud_backup_or_restore_performed": false,
+  "secrets_or_raw_user_data_in_evidence": false
+}

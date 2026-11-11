@@ -16,45 +16,78 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from sqlalchemy.engine import make_url
 
 from api.storage import _s3_client
-from scripts.backup_staging import MAGIC, database_environment, encryption_key, put_immutable, sha256
+from scripts.backup_staging import (MAGIC, backup_s3_client, database_environment,
+                                    encryption_key, put_immutable, sha256)
 
 
 def decrypt_file(source, destination, key):
-    with source.open("rb") as encrypted:
-        if encrypted.read(len(MAGIC)) != MAGIC:
-            raise ValueError("Unsupported backup format")
-        nonce = encrypted.read(12)
-        encrypted.seek(-16, os.SEEK_END)
-        tag = encrypted.read(16)
-        remaining = source.stat().st_size - len(MAGIC) - 12 - 16
-        encrypted.seek(len(MAGIC) + 12)
-        decryptor = Cipher(algorithms.AES(key), modes.GCM(nonce, tag)).decryptor()
-        with destination.open("xb") as plain:
-            destination.chmod(0o600)
-            while remaining:
-                chunk = encrypted.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    raise ValueError("Truncated backup")
-                remaining -= len(chunk)
-                plain.write(decryptor.update(chunk))
-            plain.write(decryptor.finalize())
+    created = False
+    try:
+        with source.open("rb") as encrypted:
+            if encrypted.read(len(MAGIC)) != MAGIC:
+                raise ValueError("Unsupported backup format")
+            remaining = source.stat().st_size - len(MAGIC) - 12 - 16
+            if remaining < 0:
+                raise ValueError("Truncated backup")
+            nonce = encrypted.read(12)
+            encrypted.seek(-16, os.SEEK_END)
+            tag = encrypted.read(16)
+            encrypted.seek(len(MAGIC) + 12)
+            decryptor = Cipher(algorithms.AES(key), modes.GCM(nonce, tag)).decryptor()
+            with destination.open("xb") as plain:
+                created = True
+                destination.chmod(0o600)
+                while remaining:
+                    chunk = encrypted.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise ValueError("Truncated backup")
+                    remaining -= len(chunk)
+                    plain.write(decryptor.update(chunk))
+                plain.write(decryptor.finalize())
+    except Exception:
+        if created:
+            destination.unlink(missing_ok=True)
+        raise
+
+
+def require_empty_database(url_text):
+    """Prevent a restore drill from replacing a developer's existing database."""
+    url = make_url(url_text)
+    if url.database in {"postgres", "template0", "template1"}:
+        raise ValueError("Restore target must be a dedicated empty database")
+    connection_url = url_text.replace("postgresql+psycopg://", "postgresql://")
+    with psycopg.connect(connection_url) as connection, connection.cursor() as cursor:
+        cursor.execute("""SELECT
+            (SELECT count(*) FROM pg_namespace
+             WHERE nspname NOT IN ('public', 'pg_catalog', 'information_schema')
+               AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp_%') +
+            (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f'))""")
+        if cursor.fetchone()[0]:
+            raise ValueError("Restore target is not empty; create a new isolated database")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backup-dir", type=Path, required=True)
-    parser.add_argument("--restore-database-url", required=True)
+    parser.add_argument("--restore-database-url", default=os.getenv("RESTORE_DATABASE_URL", ""),
+                        help="Isolated local PostgreSQL URL; prefer RESTORE_DATABASE_URL from a secret manager")
     parser.add_argument("--confirm-isolated-target", action="store_true")
     parser.add_argument("--restore-object-bucket", default="",
                         help="Optional empty private bucket distinct from source and backup")
     args = parser.parse_args()
+    if not args.restore_database_url:
+        parser.error("RESTORE_DATABASE_URL or --restore-database-url is required")
     url = make_url(args.restore_database_url)
     if (not args.confirm_isolated_target or url.get_backend_name() != "postgresql"
         or url.host not in {"localhost", "127.0.0.1", "::1"}):
         parser.error("Restore target must be an explicitly confirmed local PostgreSQL database")
     if not shutil.which("pg_restore"):
         parser.error("pg_restore must be installed on the restore client")
+    require_empty_database(args.restore_database_url)
     manifest = json.loads((args.backup_dir / "backup-manifest.json").read_text(encoding="utf-8"))
+    if set(manifest["encrypted_files"]) != {"database.dump.enc", "objects.json.enc"}:
+        raise SystemExit("Backup manifest must contain exactly the encrypted database and object inventory")
     for filename, item in manifest["encrypted_files"].items():
         if sha256(args.backup_dir / filename) != item["sha256"]:
             raise SystemExit(f"Encrypted backup hash mismatch: {filename}")
@@ -71,31 +104,32 @@ def main():
             raise SystemExit("Object manifest count mismatch")
         verified_objects = 0
         if manifest.get("schema_version", 1) >= 2:
-            client = _s3_client()
+            backup_client = backup_s3_client()
             backup_bucket = manifest["backup_bucket"]
             if args.restore_object_bucket:
                 if args.restore_object_bucket in {backup_bucket, object_manifest["source_bucket"]}:
                     parser.error("Object restore bucket must be isolated from source and backup")
-                client.head_bucket(Bucket=args.restore_object_bucket)
+                source_client = _s3_client()
+                source_client.head_bucket(Bucket=args.restore_object_bucket)
             for entry in object_manifest["objects"]:
                 encrypted_object = temp / "object.enc"
                 plain_object = temp / "object.bin"
                 try:
                     if not entry.get("backup_key") or not entry.get("encrypted_sha256") or not entry.get("sha256"):
                         raise SystemExit("Object copy metadata missing")
-                    client.download_file(backup_bucket, entry["backup_key"], str(encrypted_object))
+                    backup_client.download_file(backup_bucket, entry["backup_key"], str(encrypted_object))
                     if sha256(encrypted_object) != entry["encrypted_sha256"]:
                         raise SystemExit("Encrypted object copy checksum mismatch")
                     decrypt_file(encrypted_object, plain_object, key)
                     if sha256(plain_object) != entry["sha256"] or plain_object.stat().st_size != entry["size"]:
                         raise SystemExit("Restored object checksum or size mismatch")
                     if args.restore_object_bucket:
-                        put_immutable(client, args.restore_object_bucket, entry["key"], plain_object)
+                        put_immutable(source_client, args.restore_object_bucket, entry["key"], plain_object)
                     verified_objects += 1
                 finally:
                     encrypted_object.unlink(missing_ok=True)
                     plain_object.unlink(missing_ok=True)
-        subprocess.run(["pg_restore", "--clean", "--if-exists", "--no-owner", "--no-acl",
+        subprocess.run(["pg_restore", "--no-owner", "--no-acl",
                         "--exit-on-error", "--dbname", url.database, str(dump)],
                        env=database_environment(args.restore_database_url), check=True)
     with psycopg.connect(args.restore_database_url.replace("postgresql+psycopg://", "postgresql://")) as connection:

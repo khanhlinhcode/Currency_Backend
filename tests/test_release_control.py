@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -125,9 +126,18 @@ class ReleaseControlTest(unittest.TestCase):
     def test_device_pointer_changes_only_after_verified_download(self):
         data = b"model bytes"
         digest = hashlib.sha256(data).hexdigest()
+        contract = {"schema_version": 1, "channel": "staging", "model_format": "onnx",
+                    **{name: MODEL_MANIFEST[name] for name in (
+                        "class_names", "input_size", "preprocessing",
+                        "resize_interpolation", "confidence_threshold")}}
+        manifest = {**MODEL_MANIFEST, "release_status": "approved", "version": "2.0.0",
+                    "dataset_version": "2.0.0", "sha256": digest}
         release = {"status": "available", "run_id": "approved-1", "generation": 1,
+                   "channel": "staging", "model_version": "2.0.0", "dataset_version": "2.0.0",
                    "model_filename": "model.onnx", "model_sha256": digest,
-                   "artifact_path": "/devices/id/artifact/approved-1", "manifest": {"version": "2.0.0"}}
+                   "artifact_path": "/devices/id/artifact/approved-1", "manifest": manifest}
+        self_test = [sys.executable, "-c",
+                     "import sys; assert open(sys.argv[1], 'rb').read() == b'model bytes'"]
         signing_key = Ed25519PrivateKey.generate()
         private_b64 = base64.b64encode(signing_key.private_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PrivateFormat.Raw,
@@ -136,6 +146,7 @@ class ReleaseControlTest(unittest.TestCase):
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)).decode()
         calls = []
         tamper_signature = False
+        artifact_data = data
 
         def fake_request(url, _token, payload=None):
             calls.append((url, payload))
@@ -144,29 +155,53 @@ class ReleaseControlTest(unittest.TestCase):
                 if tamper_signature:
                     signed["model_sha256"] = "0" * 64
                 return FakeResponse(json.dumps(signed).encode())
-            if url.endswith("/devices/id/artifact/approved-1"):
-                return FakeResponse(data)
+            if "/devices/id/artifact/" in url:
+                return FakeResponse(artifact_data)
             return FakeResponse(b"{}")
 
         with tempfile.TemporaryDirectory() as temporary, patch("scripts.device_updater.request", fake_request):
             state_dir = Path(temporary)
-            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir, None, public_b64), "updated")
+            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir,
+                                       self_test, public_b64, contract), "updated")
             pointer = json.loads((state_dir / "current.json").read_text())
             self.assertEqual(pointer["model_sha256"], digest)
-            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir, None, public_b64), "up_to_date")
+            self.assertEqual(sync_once("https://example.test", "id", "token", state_dir,
+                                       self_test, public_b64, contract), "up_to_date")
             self.assertEqual(sum(url.endswith("/devices/id/artifact/approved-1") for url, _ in calls), 1)
+            release["manifest"]["class_names"] = ["wrong"]
+            with self.assertRaisesRegex(ValueError, "pinned device contract"):
+                sync_once("https://example.test", "id", "token", state_dir,
+                          self_test, public_b64, contract)
+            release["manifest"]["class_names"] = MODEL_MANIFEST["class_names"]
+            with self.assertRaisesRegex(ValueError, "self-test"):
+                sync_once("https://example.test", "id", "token", state_dir,
+                          None, public_b64, contract)
             tamper_signature = True
             with self.assertRaises(ValueError):
-                sync_once("https://example.test", "id", "token", state_dir, None, public_b64)
+                sync_once("https://example.test", "id", "token", state_dir,
+                          self_test, public_b64, contract)
             tamper_signature = False
             release["generation"] = 0
             with self.assertRaisesRegex(ValueError, "Stale"):
-                sync_once("https://example.test", "id", "token", state_dir, None, public_b64)
+                sync_once("https://example.test", "id", "token", state_dir,
+                          self_test, public_b64, contract)
             release["generation"] = 2
             release["model_sha256"] = "f" * 64
+            release["manifest"]["sha256"] = "f" * 64
             with self.assertRaises(ValueError):
-                sync_once("https://example.test", "id", "token", state_dir, None, public_b64)
+                sync_once("https://example.test", "id", "token", state_dir,
+                          self_test, public_b64, contract)
             self.assertEqual(json.loads((state_dir / "current.json").read_text()), pointer)
+            release["run_id"] = "approved-2"
+            release["artifact_path"] = "/devices/id/artifact/approved-2"
+            release["model_sha256"] = hashlib.sha256(b"model v2").hexdigest()
+            release["manifest"]["sha256"] = release["model_sha256"]
+            artifact_data = b"model v2"
+            with self.assertRaisesRegex(RuntimeError, "self-test failed"):
+                sync_once("https://example.test", "id", "token", state_dir,
+                          self_test, public_b64, contract)
+            self.assertEqual(json.loads((state_dir / "current.json").read_text()), pointer)
+            self.assertEqual(Path(pointer["model_path"]).read_bytes(), data)
 
     def test_device_telemetry_is_idempotent_and_requires_approved_run(self):
         import uuid

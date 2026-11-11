@@ -46,16 +46,20 @@ Alembic migration `0003_mlops_registry` adds metadata tables for runs, cloud ben
 
 ## 5. Backup, restore and rollback
 
-Supabase Free does not supply automatic daily database backups. Create a **separate private backup bucket** and a random 32-byte `BACKUP_KEY_BASE64`, stored in a password manager or Keychain and never in Git. On a trusted client with `pg_dump` and `pg_restore`, run the following using staging DB/S3 secrets in the process environment:
+Supabase Free does not supply automatic daily database backups. Create a **separate private backup bucket** with its own S3 endpoint and access key, plus a random 32-byte `BACKUP_KEY_BASE64`. Store all credentials in a password manager or Keychain, never in Git. The backup process needs the application source S3 settings and dedicated `BACKUP_S3_ENDPOINT_URL`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`, `BACKUP_S3_BUCKET` (optionally `BACKUP_S3_REGION`). It rejects reuse of the application's S3 access key. On a trusted client with `pg_dump` and `pg_restore`, run the following using staging DB/S3 secrets in the process environment:
 
 ```bash
 APP_ENV=staging BACKUP_S3_BUCKET=<private-backup-bucket> python -m scripts.backup_staging --output-dir /private/offsite/currency-ai-backups
-python -m scripts.restore_drill --backup-dir /private/offsite/currency-ai-backups/<backup-id> --restore-database-url postgresql://<local-user>:<password>@127.0.0.1:5432/<empty-local-db> --confirm-isolated-target
+python -m scripts.restore_drill --backup-dir /private/offsite/currency-ai-backups/<backup-id> --confirm-isolated-target
 ```
 
-The backup encrypts the custom PostgreSQL dump, object inventory **and each private object** with AES-256-GCM before uploading to the separate bucket. The restore drill rejects remote database hosts, verifies encrypted hashes and authentication tags, restores PostgreSQL, and verifies every object copy. With `--restore-object-bucket <isolated-private-bucket>`, it also restores objects into a separate bucket; it rejects the source and backup buckets as targets. Keep the encryption key and backup bucket independent of the application deploy. A complete backup needs enough private backup storage for every source object.
+For the restore command, set `RESTORE_DATABASE_URL` in the process environment from your secret manager, pointing to a newly created, empty local database; do not put its password in shell history or command arguments.
+
+The backup encrypts the custom PostgreSQL dump, object inventory **and each private object** with AES-256-GCM before uploading to the separate bucket through its dedicated credentials. The restore drill rejects remote or nonempty database targets (including the default `postgres` database), verifies encrypted hashes and authentication tags, restores into a new local PostgreSQL database, and verifies every object copy. With `--restore-object-bucket <isolated-private-bucket>`, it also restores objects into a separate source-project bucket; it rejects the source and backup buckets as targets. Keep the encryption key and backup credentials independent of the application deploy. A complete backup needs enough private backup storage for every source object.
 
 An isolated rehearsal on 2026-11-09 restored a PostgreSQL 16 dump and verified one object-manifest entry; [earlier evidence](evidence/2026-11-09-local-restore-drill.json). A newer full drill on 2026-11-10 restored one PostgreSQL row and two encrypted object copies into an isolated bucket; [full drill evidence](evidence/2026-11-10-local-full-restore-drill.json). Both used a local database and moto S3, **not** Supabase data. A real staging backup and restore still require a separate private backup bucket and credential setup.
+
+After adding dedicated backup credentials and an empty-target guard, a 2026-11-11 [local end-to-end drill](evidence/2026-11-11-separate-backup-local-drill.json) ran `pg_dump` and `pg_restore`, verified one restored row and two encrypted objects, and restored both objects into an isolated bucket. The source and backup S3 clients used different test keys. This still did **not** access Supabase; a cloud backup and isolated cloud-data restore remain outstanding.
 
 For an application rollback, retain the previous Render deploy and immutable `MODEL_S3_KEY`, restore the prior deploy and model key together, then verify `/ready`, login, prediction, history and MLOps pages. Additive migrations are forward compatible; a database restore is a separate operation. Record the actual drill, duration and any failures before claiming recovery objectives.
 

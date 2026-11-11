@@ -1,52 +1,44 @@
 # Production runbook
 
-This runbook describes the supported deployment: Vercel (frontend), Render Docker web service, Render PostgreSQL, and a private S3 compatible bucket for prediction images and model artifacts. `render.yaml` defines the backend service and database. Railway can also use the Dockerfile and `railway.json` with the same environment variables.
+This runbook describes the production path: a static frontend, Render Docker web service, Render PostgreSQL, and a private S3 compatible bucket for prediction images and model artifacts. `render.yaml` defines the backend service and database. The frontend can be hosted on Render Static Sites or Vercel with `VITE_API_URL` pointing to the production API. The existing live frontend and API are **staging**, not a production release.
+
+## Current release status (2026-11-11)
+
+- The backend and dashboard are live on Render staging; MLOps runs, monitoring, benchmark reports, release control and private object storage are implemented there.
+- The two raw exact-content label conflicts have been resolved in the local review CSV, but **all 10,106 images still lack attested physical-note/capture-session `group_id` values**. The old split has 182 exact-content groups crossing train/validation/test. Model 1.1.0 remains a candidate and the active approved release channel is empty.
+- Render CLI validation of the paid production `render.yaml` currently returns `need_payment_info` for both the web service and database. No Currency AI production service has been provisioned.
+- The encrypted PostgreSQL/object restore drill has passed on isolated local infrastructure. A backup and restore of the actual Supabase staging data has not been verified. No physical device has installed a newly approved release.
+
+Do not set `APP_ENV=production` with the legacy candidate or claim production model quality from staging availability and service benchmarks.
 
 ## Release gates
 
-1. Inventory and curate raw data as described in `docs/staging-runbook.md`. Resolve conflicting labels, remove redundant exact copies and create a `path,group_id` CSV for the curated view. Each group ID must identify a physical banknote or capture session. Run `python training/split_grouped.py --raw dataset/curated_raw --groups results/curated-groups.csv --output dataset/processed_v2 --attested-physical-groups`, then audit the new output. The existing image-level split does not establish independent evaluation.
-2. Run `python scripts/verify_release.py --require-artifact` and `python training/evaluate_release.py`. The evaluator writes real test accuracy, macro F1, per-class metrics and a confusion matrix to `results/release-evaluation.json`. Do not use generated charts or the historical hard-coded accuracy as release evidence.
-3. Set `dataset_version` and `test_metrics` in `models/model-manifest.json` from the verified audit and evaluation. Preserve the exact class order used by training. Each model change needs a new version and SHA-256 digest. Set `release_status` to `approved` only after all gates pass; production startup rejects candidate manifests.
-4. Run `python -m training.benchmark_inference path/to/test-image.jpg --runs 100` on hardware comparable to production. The result records warm p50/p95/p99 inference latency. After staging deploy, run `python scripts/benchmark_api.py path/to/test-image.jpg --url https://<staging-domain> --runs 100 --concurrency 4 --output results/staging-api-benchmark.json` to measure upload, storage and database time as well. The HTTP benchmark creates prediction records and images; use a staging environment and purge those records after review.
-5. Review the proposed thresholds for per-class recall, macro F1, low-confidence rate, and p95 processing latency before promoting a model. Keep the test split fixed across candidate comparisons.
+1. Use the [local review interface](data-review-ui.md) or [provenance-backed batch import](batch-data-review.md) to attest every `group_id` from a source record. If the old collection lacks that record, use the [new capture intake](new-capture-intake.md) to collect traceable data. Run `scripts/finalize-data-review.command` only after the review queue reaches zero; it builds the immutable dataset v2 snapshot and verifies grouped splits.
+2. Lock a version-specific quality policy **before** evaluating its held-out test set. Use the [MLOps v2 runbook](mlops-v2-runbook.md) for the candidate pipeline, which records the Git commit, dataset and model hashes, epoch history, per-class metrics, confusion matrix, calibration, benchmark and release-gate decision.
+3. Require a verified dataset manifest, independent test-set metrics, per-class recall, macro F1, calibration and inference benchmark to pass the locked gate. Archive the exact evidence privately in PostgreSQL and S3; approve a run through the controlled release workflow only after review. Never turn a candidate into an approved release by editing a status field alone.
+4. Test the approved artifact on staging with three distinct images, concurrency 1/4/8, at least 100 measured requests per profile, a cold-start request and sustained load. Preserve tagged benchmark reports and remove the test traffic afterward. Service speed measurements do not establish model accuracy.
 
-The current manifest has `test_metrics: null`, `dataset_version: legacy-unversioned`, and `release_status: candidate`. This means the historical model is a candidate, not a measured production release. The existing split contains 182 exact duplicate groups across splits.
+The current manifest has `test_metrics: null`, `dataset_version: legacy-unversioned`, and `release_status: candidate`. The historical accuracy is diagnostic only.
 
 An isolated staging service may use `APP_ENV=staging` with this candidate model for integration tests. Staging still requires PostgreSQL, private S3 storage, strong credentials and exact CORS origins. Do not expose candidate accuracy as production quality.
 
 ### Candidate to approved workflow
 
-Install Python 3.11 and `requirements-training.txt`. After a group CSV exists, run the following with paths and quality thresholds chosen for the use case:
-
-`python scripts/run_candidate_pipeline.py --dataset-root dataset/processed_v2 --version 2.0.0 --benchmark-image path/to/test-image.jpg --gates-file results/quality-gates-v2.json --training-config results/training-config-v2.json` automates audit, training, evaluation, warm benchmark and run recording. The quality policy must be locked before held-out evaluation. See [MLOps v2 runbook](mlops-v2-runbook.md) for the human review fields and dataset manifest. The detailed commands below can also be run individually for review and debugging.
-
-```bash
-python training/split_grouped.py --raw dataset/curated_raw_v2 --groups results/curated-groups-v2.csv --curation-report results/curation-v2.json --dataset-version 2.0.0 --output dataset/processed_v2 --attested-physical-groups
-python training/audit_dataset.py --root dataset/processed_v2 --output results/dataset-audit-v2.json
-DATA_DIR=dataset/processed_v2 python training/train_efficientnetb0.py
-python scripts/create_candidate.py --model models/efficientnetb0_best.keras --audit results/dataset-audit-v2.json --train-dir dataset/processed_v2/train --version 2.0.0
-python training/evaluate_release.py --test-dir dataset/processed_v2/test --audit results/dataset-audit-v2.json --gates-file results/quality-gates-v2.json
-python -m training.benchmark_inference path/to/test-image.jpg --runs 100 --output results/benchmark.json
-python scripts/promote_release.py --audit results/dataset-audit-v2.json --evaluation results/release-evaluation.json --benchmark results/benchmark.json --gates-file results/quality-gates-v2.json --report results/release-gate-v2.json
-python scripts/verify_release.py --require-artifact
-python scripts/record_run.py --audit results/dataset-audit-v2.json --evaluation results/release-evaluation.json --benchmark results/benchmark.json --training-history results/efficientnetb0_training_history.csv --training-config results/training-config-v2.json --gates-file results/quality-gates-v2.json --release-gate results/release-gate-v2.json --model models/efficientnetb0_best.keras --status approved
-```
-
-Thresholds in `docs/model-quality-gates.example.json` are examples only. Agree on acceptance criteria and lock a dataset-specific policy before test evaluation. The model is not approved until every gate passes. Training history is written from actual epochs to `results/efficientnetb0_training_history.csv`.
+Install Python 3.11 and `requirements-training.txt`. After an audited v2 snapshot exists, copy the example training and quality-gate configurations to private run-specific files. Set the dataset version and lock the quality policy before any test evaluation. Then follow the single `run_candidate_pipeline.py` command in the [MLOps v2 runbook](mlops-v2-runbook.md). The example thresholds are not an approved policy. Keep the test split fixed across candidates and retain each run's immutable evidence.
 
 ## Provisioning and deploy
 
 1. Create a private S3 compatible bucket. Set `MODEL_S3_KEY` to an immutable key such as `models/2.0.0/efficientnetb0_best.keras`; run `python -m scripts.publish_artifact --model models/efficientnetb0_best.keras` after approval. The script checks status and SHA-256 before uploading. Do not expose the bucket publicly.
-2. Create a Render Blueprint from `render.yaml`. Set `CORS_ORIGINS` to the exact Vercel production domain; set a unique `ADMIN_USERNAME` and a strong `ADMIN_PASSWORD`. Set `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT_URL` (if needed), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `MODEL_S3_KEY`. `SECRET_KEY` is generated by Render. The database URL is provided by Render PostgreSQL.
+2. Once Render billing and a verified release are available, create a Render Blueprint from `render.yaml`. Set `CORS_ORIGINS` to the exact production frontend domain; set a unique `ADMIN_USERNAME` and a strong `ADMIN_PASSWORD`. Set `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT_URL` (if needed), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `MODEL_S3_KEY`. `SECRET_KEY` is generated by Render. The database URL is provided by Render PostgreSQL.
 3. Render builds the Dockerfile, runs `alembic upgrade head` before deployment, downloads the pinned model at startup, verifies SHA-256 and output dimensions, and checks `/ready` before traffic is routed to the new instance.
-4. Deploy the frontend to Vercel. Set `VITE_API_URL=https://<backend-domain>` for Production and Preview as appropriate, then rebuild. The value is public in the browser bundle, so it must never contain credentials.
+4. Deploy the frontend as a separate production site (Render Static Sites or Vercel). Set `VITE_API_URL=https://<production-backend-domain>`, rebuild, and confirm the site is not pointing to staging. The URL is public in the browser bundle and must never contain credentials.
 5. Smoke test: `/ready`, `/login`, a real `/predict`, `/history`, `/stats`, image viewing via a short-lived signed URL, review submission, and the dashboard. Run the API benchmark above at the expected concurrency and inspect error count, throughput, p95 and p99. Check logs and p95 timings after traffic begins.
 
 For local development, run `python -m alembic upgrade head` before `uvicorn api.main:app --reload`. The old SQLite file can be adopted by the initial migration. Back it up first. `APP_ENV=production` rejects missing production settings.
 
 ## Operations
 
-- Back up PostgreSQL and enable recovery on the chosen plan. Record the model key and manifest with every deploy. Roll back application code and the manifest together; use a compatible forward database migration or restore a database backup when necessary.
+- Back up PostgreSQL and enable recovery on the chosen plan. Use separate backup-bucket credentials and an encryption key held outside the application deploy; verify a restore to an empty isolated database and bucket before relying on it. Record the model key and manifest with every deploy. Roll back application code and the manifest together; use a compatible forward database migration or restore a database backup when necessary.
 - Images are private S3 objects; history responses contain a signed URL valid for five minutes. Run `python -m scripts.purge_history --days 90` on a scheduled job if the retention policy is 90 days. Adjust that period to the approved policy.
 - Dashboard latency comes from the latest 1,000 predictions of the current model version. Reviewed accuracy comes only from records manually labeled by staff and may be biased; the independent test set remains the release quality measure.
 - Monitor startup failures, database connectivity, storage failures, HTTP error rate, inference p95/p99, total processing p95, low-confidence proportion and review outcomes. Investigate drift before retraining. Keep each new dataset snapshot, model artifact, manifest and evaluation report.
@@ -57,4 +49,4 @@ For local development, run `python -m alembic upgrade head` before `uvicorn api.
 - The legacy dataset uses an image-level split and has inconsistent `USA_2 Dollar` spelling. Regenerate a clean grouped split and rerun evaluation before making accuracy claims.
 - A production rate limiter or gateway policy should protect the public upload endpoint. Review the signed URL behavior and bucket CORS on the selected S3 provider.
 - The SQLite file and 30 uploaded images have been removed from Git tracking in this change; local copies remain. Existing Git history may still contain them, so review repository visibility and history handling before publication.
-- Run records are currently local files. After private artifact storage is provisioned, automate archiving them, schedule drift/error checks and rehearse a cloud rollback. CI verifies release-gate logic but cannot run a real model evaluation until a verified dataset and model artifact are available to the runner.
+- Staging run records are registered in PostgreSQL with artifacts in private Supabase Storage. Production needs its own isolated credentials, scheduled monitoring, tested offsite backup/restore, a rehearsed code-plus-model rollback and a physical-device update test using a pinned device contract. CI verifies release-gate logic on fixtures; a real model evaluation must run separately with a verified dataset and save its evidence.
