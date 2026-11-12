@@ -6,15 +6,15 @@ FastAPI nhận dạng **mệnh giá** tiền giấy VN, Mỹ và Ấn Độ (25 
 
 | Hạng mục | Trạng thái đã xác minh |
 |---|---|
-| Staging | [API Render Free](https://currency-ai-free-staging.onrender.com/ready) và [dashboard](https://currency-ai-free-dashboard.onrender.com/) hoạt động; backend commit `5fe3be34` đã qua CI và `live`. |
+| Staging | [API Render Free](https://currency-ai-free-staging.onrender.com/ready) và [dashboard](https://currency-ai-free-dashboard.onrender.com/) hoạt động; bản backend ngày 12/11 đã qua CI và đạt trạng thái `live`. |
 | Model | `1.1.0`, `candidate`, dataset `legacy-unversioned`; **chưa có model được phê duyệt cho production**. Accuracy 96,29% cũ chỉ mang tính chẩn đoán. |
 | Dữ liệu | 10.106 ảnh cũ: **0 ảnh được duyệt đủ**, 10.106 thiếu `group_id`, 0 nhãn mâu thuẫn chưa xử lý. Tập chia cũ có 182 nhóm ảnh trùng qua train/val/test. |
-| Kiểm tra code | 46/46 unit test cục bộ đạt trên working tree; CI của bản staging `5fe3be34` đạt 45/45. Đây là kiểm tra phần mềm/fixture, không phải accuracy model. |
+| Kiểm tra code | 46/46 unit test cục bộ đạt; CI của bản backend ngày 12/11 thành công. Đây là kiểm tra phần mềm/fixture, không phải accuracy model. |
 | Production | Chưa triển khai. `render.yaml` bị Render trả `need_payment_info` cho service và database trả phí; release gate cũng chặn model legacy. |
 
 [Báo cáo hậu triển khai](docs/evidence/2026-11-11-integration-preflight.json) phân biệt rõ kết quả cloud với diễn tập cục bộ. Staging dùng PostgreSQL và private Supabase Storage; hệ thống có MLOps Runs, so sánh model, benchmark, monitoring và trang admin phát hành/rollback. Lần deploy mới nhất chỉ smoke `/ready` và dashboard; các luồng đăng nhập/predict đã được kiểm tra ở các bản staging trước, xem [validation report](docs/validation-report.md).
 
-Kiểm tra ngày 12/11: `/ready` trả HTTP 200 sau 42,564 giây từ client, dashboard trả HTTP 200 sau 0,606 giây; đây là hai yêu cầu đơn lẻ, không phải benchmark hay cam kết độ trễ. Render vẫn báo backend commit `5fe3be34` ở trạng thái `live`. Truy vấn log lỗi Render lần này không thực hiện được do dịch vụ log trả 503.
+Kiểm tra ngày 12/11: trước deploy mới, `/ready` trả HTTP 200 sau 42,564 giây từ client và dashboard trả HTTP 200 sau 0,606 giây; sau khi Render báo `live`, `/ready` trả HTTP 200 sau 0,220 giây và dashboard sau 0,593 giây. Đây là các yêu cầu đơn lẻ, không phải benchmark hay cam kết độ trễ. Truy vấn log lỗi Render lần này không thực hiện được do dịch vụ log trả 503.
 
 ### Số liệu hiệu năng staging đã đo
 
