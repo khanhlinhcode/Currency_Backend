@@ -24,7 +24,7 @@ An isolated staging service may use `APP_ENV=staging` with this candidate model 
 
 ### Candidate to approved workflow
 
-Install Python 3.11 and `requirements-training.txt`. After an audited v2 snapshot exists, copy the example training and quality-gate configurations to private run-specific files. Set the dataset version and lock the quality policy before any test evaluation. Then follow the single `run_candidate_pipeline.py` command in the [MLOps v2 runbook](mlops-v2-runbook.md). The example thresholds are not an approved policy. Keep the test split fixed across candidates and retain each run's immutable evidence.
+Install Python 3.11 and `requirements-training.txt`. After an audited v2 snapshot exists, copy the example training and quality-gate configurations to private run-specific files. Set the dataset version and lock the quality policy before any test evaluation. Then follow the single `run_candidate_pipeline.py` command in the [MLOps v2 runbook](mlops-v2-runbook.md). The example thresholds are not an approved policy. Keep the test split fixed across candidates and retain each run's immutable evidence. This command produces a Keras candidate; a Render Free ONNX release needs separate conversion, `evaluate_onnx.py --release-grade` on the exact converted hash, ONNX benchmark, gate review and approved run archival. That path has not been exercised on a real v2 dataset.
 
 ## Provisioning and deploy
 

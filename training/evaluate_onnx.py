@@ -1,10 +1,13 @@
-"""Evaluate an ONNX runtime artifact on the historical test split (diagnostic)."""
+"""Evaluate a pinned ONNX artifact; release-grade mode requires a fresh v2 audit."""
 
 import argparse
 import json
 import math
 import platform
 import statistics
+import subprocess
+import sys
+import tempfile
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -15,6 +18,7 @@ import onnxruntime as ort
 from PIL import Image
 
 from scripts.verify_release import sha256
+from scripts.quality_gates import load_gates
 
 
 def percentile(values, q):
@@ -52,7 +56,41 @@ def metrics(rows, labels, threshold):
         "accepted_accuracy": round(sum(a == p for a, p in accepted) / len(accepted), 6) if accepted else None,
         "high_confidence_errors": sum(a != p for a, p in accepted),
         "per_class": class_metrics,
+        "confusion_matrix": [[sum(a == actual and p == predicted for a, p, _ in rows)
+                              for predicted in labels] for actual in labels],
     }
+
+
+def release_grade_preflight(dataset_root, manifest, audit, gates_file):
+    """Re-audit the exact image tree and validate the locked policy before test use."""
+    if gates_file is None:
+        raise ValueError("Release-grade ONNX evaluation requires --gates-file")
+    required = ("dataset_manifest_verified", "human_review_complete", "group_split_verified",
+                "class_sets_match")
+    if (not all(audit.get(key) is True for key in required)
+        or audit.get("exact_cross_split_duplicates") != 0
+        or audit.get("conflicting_label_groups") != 0
+        or manifest.get("dataset_version") in {None, "legacy-unversioned"}
+        or manifest.get("dataset_version") != audit.get("dataset_version")
+        or manifest.get("dataset_manifest_sha256") != audit.get("dataset_manifest_sha256")):
+        raise ValueError("Release-grade ONNX evaluation requires a verified grouped v2 dataset")
+    gates, gates_sha256 = load_gates(gates_file, audit["dataset_version"])
+    locked_at = datetime.fromisoformat(gates["locked_at"].replace("Z", "+00:00"))
+    if locked_at >= datetime.now(timezone.utc):
+        raise ValueError("Quality policy must be locked before test evaluation")
+    with tempfile.TemporaryDirectory(prefix="currency-onnx-audit-") as temporary:
+        fresh_path = Path(temporary) / "audit.json"
+        command = [sys.executable, str(Path(__file__).with_name("audit_dataset.py")),
+                   "--root", str(dataset_root), "--output", str(fresh_path)]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode:
+            raise ValueError("Fresh dataset audit failed: " + result.stderr[-300:])
+        fresh = json.loads(fresh_path.read_text(encoding="utf-8"))
+    for key in ("dataset_version", "dataset_manifest_sha256", "dataset_content_sha256",
+                "counts", "exact_cross_split_duplicates", "conflicting_label_groups"):
+        if fresh.get(key) != audit.get(key):
+            raise ValueError(f"Dataset changed since recorded audit: {key}")
+    return gates_sha256
 
 
 def main():
@@ -63,10 +101,15 @@ def main():
     parser.add_argument("--audit", type=Path, default=Path("results/dataset-audit.json"))
     parser.add_argument("--output", type=Path, default=Path("results/onnx-evaluation.json"))
     parser.add_argument("--compare-source", type=Path, help="Compare predictions to source Keras on identical resized images")
+    parser.add_argument("--release-grade", action="store_true",
+                        help="Require audited v2 dataset and locked quality policy; emit release metrics")
+    parser.add_argument("--gates-file", type=Path, help="Locked quality policy for --release-grade")
     args = parser.parse_args()
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     audit = json.loads(args.audit.read_text(encoding="utf-8"))
+    gates_sha256 = (release_grade_preflight(args.dataset_root, manifest, audit, args.gates_file)
+                    if args.release_grade else None)
     if sha256(args.model) != manifest["sha256"]:
         raise SystemExit("ONNX artifact checksum mismatch")
     labels = manifest["class_names"]
@@ -99,6 +142,8 @@ def main():
             tensor = np.expand_dims(np.asarray(source.convert("RGB").resize((224, 224), Image.Resampling.NEAREST), dtype=np.float32), 0)
         inference_started = time.perf_counter()
         scores = session.run([output_name], {input_name: tensor})[0][0]
+        if np.asarray(scores).shape != (len(labels),) or not np.all(np.isfinite(scores)):
+            raise SystemExit("ONNX output does not match finite class probabilities")
         times.append((time.perf_counter() - inference_started) * 1000)
         rows.append((label, labels[int(np.argmax(scores))], float(np.max(scores))))
         if source_model is not None:
@@ -110,7 +155,9 @@ def main():
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "interpretation": "Diagnostic only: historical split has leakage and unverified physical groups",
+        "interpretation": ("Independent held-out test on freshly audited grouped v2 dataset"
+                           if args.release_grade else
+                           "Diagnostic only: historical split has leakage and unverified physical groups"),
         "model_version": manifest["version"],
         "model_sha256": manifest["sha256"],
         "onnx_sha256": manifest["sha256"],
@@ -120,6 +167,7 @@ def main():
         "exact_cross_split_duplicates": audit["exact_cross_split_duplicates"],
         "conflicting_label_groups": audit["conflicting_label_groups"],
         "confidence_threshold": manifest["confidence_threshold"],
+        "gates_sha256": gates_sha256,
         **metrics(rows, labels, manifest["confidence_threshold"]),
         "wall_seconds": round(elapsed, 3),
         "images_per_second": round(len(rows) / elapsed, 3),
@@ -127,6 +175,8 @@ def main():
         "environment": {"platform": platform.platform(), "python": platform.python_version(), "onnxruntime": ort.__version__},
         "label_counts": dict(Counter(label for label, _ in images)),
     }
+    if args.release_grade:
+        report["evaluated_at"] = report["generated_at"]
     if source_model is not None:
         report["source_same_preprocessing"] = metrics(source_rows, labels, manifest["confidence_threshold"])
         report["source_top1_agreement"] = round(agreement / len(rows), 6)

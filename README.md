@@ -1,14 +1,64 @@
 # Currency AI backend
 
-FastAPI service for recognizing the denomination of Vietnamese, US and Indian banknotes. The current EfficientNetB0 model has 25 classes. Low confidence means **review required**; this system has not been validated to detect counterfeit notes.
+FastAPI nhận dạng **mệnh giá** tiền giấy VN, Mỹ và Ấn Độ (25 lớp). `suspicious`/confidence thấp có nghĩa là cần người xem lại; hệ thống **chưa được kiểm chứng để phát hiện tiền giả**.
 
-## Current release status
+## Trạng thái hiện tại (12/11/2026)
 
-The checked-in [model manifest](models/model-manifest.json) is `candidate`. A raw-data audit found exact duplicates crossing the old train/validation/test split and two conflicting-label groups. The historical accuracy is diagnostic only. `APP_ENV=production` refuses this candidate until a verified grouped dataset, fresh evaluation and release gates pass.
+| Hạng mục | Trạng thái đã xác minh |
+|---|---|
+| Staging | [API Render Free](https://currency-ai-free-staging.onrender.com/ready) và [dashboard](https://currency-ai-free-dashboard.onrender.com/) hoạt động; backend commit `5fe3be34` đã qua CI và `live`. |
+| Model | `1.1.0`, `candidate`, dataset `legacy-unversioned`; **chưa có model được phê duyệt cho production**. Accuracy 96,29% cũ chỉ mang tính chẩn đoán. |
+| Dữ liệu | 10.106 ảnh cũ: **0 ảnh được duyệt đủ**, 10.106 thiếu `group_id`, 0 nhãn mâu thuẫn chưa xử lý. Tập chia cũ có 182 nhóm ảnh trùng qua train/val/test. |
+| Kiểm tra code | 46/46 unit test cục bộ đạt trên working tree; CI của bản staging `5fe3be34` đạt 45/45. Đây là kiểm tra phần mềm/fixture, không phải accuracy model. |
+| Production | Chưa triển khai. `render.yaml` bị Render trả `need_payment_info` cho service và database trả phí; release gate cũng chặn model legacy. |
 
-## Local development
+[Báo cáo hậu triển khai](docs/evidence/2026-11-11-integration-preflight.json) phân biệt rõ kết quả cloud với diễn tập cục bộ. Staging dùng PostgreSQL và private Supabase Storage; hệ thống có MLOps Runs, so sánh model, benchmark, monitoring và trang admin phát hành/rollback. Lần deploy mới nhất chỉ smoke `/ready` và dashboard; các luồng đăng nhập/predict đã được kiểm tra ở các bản staging trước, xem [validation report](docs/validation-report.md).
 
-Use Python 3.11 and a local copy of the model artifact whose SHA-256 matches the manifest:
+Kiểm tra ngày 12/11: `/ready` trả HTTP 200 sau 42,564 giây từ client, dashboard trả HTTP 200 sau 0,606 giây; đây là hai yêu cầu đơn lẻ, không phải benchmark hay cam kết độ trễ. Render vẫn báo backend commit `5fe3be34` ở trạng thái `live`. Truy vấn log lỗi Render lần này không thực hiện được do dịch vụ log trả 503.
+
+### Số liệu hiệu năng staging đã đo
+
+Ba ảnh khác lớp/kích thước (56–596 KB), 10 warmup và 100 yêu cầu đo cho mỗi mức tải trên **Render Free, model candidate 1.1.0**, ngày 10/11/2026:
+
+| Đồng thời | Thành công | Throughput | Client p95 | Client p99 |
+|---:|---:|---:|---:|---:|
+| 1 | 100/100 | 1,351 req/s | 1,005 s | 1,222 s |
+| 4 | 100/100 | 2,535 req/s | 2,090 s | 2,266 s |
+| 8 | 100/100 | 2,344 req/s | 5,216 s | 7,496 s |
+
+Một lần đánh thức Render Free mất 52,688 s; đây **không phải** phân phối cold start hay SLA. Bảng trên đo tốc độ dịch vụ, không chứng minh model đúng. Có báo cáo tải kéo dài 300 yêu cầu và CPU/RAM trong [validation report](docs/validation-report.md).
+
+## MLOps hiện có và giới hạn
+
+- Mỗi run ghi Git commit, dataset/model version, seed, cấu hình train, lịch sử epoch, hash artifact, test-set metrics từng lớp, confusion matrix, calibration, benchmark và release gate. Metadata ở PostgreSQL, artifact ở private Storage. CI kiểm tra schema/gate trên fixture; huấn luyện và đánh giá nặng chạy riêng.
+- Monitoring theo dõi lỗi, latency, confidence thấp và review. Drift chỉ được tính khi có baseline dataset sạch và đủ mẫu; hiện trạng thái chất lượng là **chưa đủ dữ liệu**. Cảnh báo mở điều tra, không tự train hay tự thay model.
+- Admin có thể kích hoạt/rollback **run đã được duyệt** từ dashboard, không cần sửa code. API poll channel mỗi 60 giây; thiết bị tương thích poll mỗi 300 giây, kiểm chữ ký, hash, hợp đồng model và self-test trước khi đổi pointer. Chưa thử cài model đã duyệt trên thiết bị vật lý.
+- Backup PostgreSQL/object đã diễn tập với hạ tầng cô lập và khóa backup tách biệt. **Chưa backup/restore dữ liệu Supabase thật** vì chưa có kho backup/credential riêng ở phiên vận hành này.
+
+Chi tiết: [MLOps v2 runbook](docs/mlops-v2-runbook.md), [release control](docs/release-control-runbook.md), [production runbook](docs/production-runbook.md).
+
+## Train lại và cập nhật model
+
+1. **Chuẩn bị dữ liệu có nguồn gốc.** Nếu có hồ sơ chụp cho ảnh cũ, dùng [giao diện duyệt](docs/data-review-ui.md) hoặc [nhập `group_id` theo lô](docs/batch-data-review.md). Nếu không, [thu thập ảnh mới](docs/new-capture-intake.md), xác minh và gộp các đợt chụp. Không tạo `group_id` từ tên file, hash hoặc EXIF.
+2. **Chốt dataset v2:** mọi ảnh được duyệt; không còn nhãn mâu thuẫn hay nhóm/ảnh trùng qua split. Chạy `scripts/finalize-data-review.command` (hoặc `python -m scripts.finalize_data_review` với `--raw`, `--review-csv`, `--version` tương ứng). Giữ snapshot và manifest bất biến.
+3. **Khóa ngưỡng trước test:** sao chép `docs/model-quality-gates.example.json` và `docs/training-config.example.json` vào file riêng tư, đặt dataset version, người/thời điểm phê duyệt, `status=locked` và tham số/seed. Ngưỡng mẫu chưa phải chính sách phát hành.
+4. **Train trên máy phù hợp** với Python 3.11 và `requirements-training.txt`:
+
+   ```bash
+   python scripts/run_candidate_pipeline.py \
+     --dataset-root dataset/v2/<version>/processed \
+     --version <model-version> \
+     --benchmark-image <anh-dai-dien.jpg> \
+     --training-config results/training-config-v2.json \
+     --gates-file results/quality-gates-v2.json
+   ```
+
+   Pipeline dừng nếu audit/review chưa đạt; khi chạy được, nó tạo **Keras candidate** và bằng chứng đánh giá. Có thể thêm `--archive-to-s3` trên máy đã cấu hình private staging Storage/PostgreSQL. Không dùng accuracy cũ để duyệt.
+5. **Xem xét và phát hành:** người phụ trách kiểm tra per-class recall, macro F1, ECE, coverage, confusion matrix, latency và gate; model không đạt thì giữ candidate. Nếu đạt, phải phê duyệt và lưu một **approved run** với đúng hash artifact/metrics/gate, rồi admin mới kích hoạt trên trang **Phát hành & thiết bị**. Khi kênh đổi, API/thiết bị tương thích tải bản mới qua mạng và có thể rollback về approved run trước đó.
+
+**Giới hạn của bước 5 hiện tại:** pipeline tự động chỉ train/đánh giá Keras. API Render Free dùng ONNX Runtime và không nhận Keras khi thiếu TensorFlow. `scripts/export_onnx.py` chuyển đổi được; `training/evaluate_onnx.py --release-grade` kiểm tra lại audit dataset v2 và policy đã khóa, rồi đánh giá đúng ONNX hash. Bước chuyển đổi → benchmark ONNX → release gate → ghi approved run → lưu private Storage hiện vẫn là thao tác riêng, chưa có pipeline end-to-end được kiểm chứng với dataset thật. Không dùng metrics Keras để phê duyệt ONNX. Khi model giảm chất lượng, hệ thống **cảnh báo để người phụ trách điều tra và duyệt lần train mới**, không tự thay model.
+
+## Chạy cục bộ
 
 ```bash
 python3.11 -m venv .venv
@@ -18,35 +68,4 @@ python -m alembic upgrade head
 uvicorn api.main:app --reload
 ```
 
-The development defaults use SQLite and local image files. Copy `.env.example` into a private environment file or export the variables before starting. API documentation is at `http://127.0.0.1:8000/docs`. The frontend is in the sibling `currency-frontend` repository.
-
-## Data and model lifecycle
-
-1. Run `python training/inventory_raw.py` to list raw images, exact duplicates and conflicting labels.
-2. Run `python training/curate_raw.py` to build a deduplicated local view. Review the quarantined images and fill physical-banknote or capture-session `group_id` values in the generated CSV.
-3. Split with `training/split_grouped.py --attested-physical-groups`, then run `training/audit_dataset.py`. The audit must pass before training a release candidate.
-4. Train, evaluate, benchmark and record the run. `scripts/promote_release.py` checks quality, calibration, group integrity and inference latency before approving a manifest.
-5. Deploy the approved artifact and manifest together. Track dashboard latency and reviewed outcomes, then investigate signals from `scripts/drift_report.py`.
-
-Exact commands and acceptance criteria are in the [staging runbook](docs/staging-runbook.md) and [production runbook](docs/production-runbook.md). The [validation report](docs/validation-report.md) contains measured results and known limits.
-
-The [free staging runbook](docs/free-staging-runbook.md) uses a checksum-pinned ONNX conversion on Render Free with isolated Supabase PostgreSQL and private object storage. The live [staging dashboard](https://currency-ai-free-dashboard.onrender.com) calls the [staging API](https://currency-ai-free-staging.onrender.com/ready). `render.free.yaml` describes the native Python service; `Dockerfile.free` supports local resource testing. This staging deployment does not relax the model release gate. `scripts/archive_run.py` saves immutable audit/evaluation/benchmark run folders, `/mlops/runs` exposes their summaries to admins, and the scheduled staging monitor retains JSON snapshots in CI.
-
-The [MLOps v2 runbook](docs/mlops-v2-runbook.md) covers human dataset review, pre-registered quality gates, PostgreSQL run metadata, private artifact reports, dashboard monitoring and encrypted backup/restore drills. Its release path stays blocked until physical group IDs and conflicting labels are reviewed.
-
-For nontechnical human reviewers, [open the local review interface](docs/data-review-ui.md) with `scripts/start-data-review.command`. It never guesses `group_id`; the one-click finalizer produces a new audited dataset version only after every review is complete.
-
-If a trusted capture ledger or source manifest exists, [import its attested `group_id` mappings in batches](docs/batch-data-review.md). The importer checks image paths and hashes, writes an atomic local CSV with a backup, and leaves images without provenance pending.
-
-## Deploy and verification
-
-`render.staging.yaml` defines an isolated staging backend and PostgreSQL database; `render.yaml` defines production. Both use the Dockerfile, Alembic migrations, private S3-compatible image/model storage and `/ready` health checks. The frontend uses `VITE_API_URL` and, on staging, `VITE_APP_ENV=staging` to require login before prediction.
-
-```bash
-python -m unittest discover -s tests
-python scripts/verify_release.py --require-artifact
-python scripts/benchmark_api.py image-a.jpg image-b.jpg image-c.jpg --url https://<staging-api> --token-env STAGING_TOKEN --runs 100 --concurrency 4 --output results/staging-api-benchmark.json
-python scripts/check_staging_benchmark.py --report results/staging-api-benchmark.json
-```
-
-`/predict` returns model version, queue wait, model execution and total processing time. `/stats` shows operational latency and reviewed accuracy; benchmark traffic is excluded. `/history`, `/users`, `/model-info` and `/stats` require authentication. The staging `/predict` endpoint also requires authentication.
+Mặc định development dùng SQLite và file ảnh cục bộ. Đặt biến môi trường từ `.env.example` trong file riêng tư; không commit secret. API docs: `http://127.0.0.1:8000/docs`. Frontend ở repository `currency-frontend` cùng cấp. Kiểm tra code bằng `python -m unittest discover -s tests` và `python scripts/verify_release.py`; lệnh verify chỉ kiểm tra hợp đồng artifact/manifest, **không phê duyệt chất lượng model**.
