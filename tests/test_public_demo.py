@@ -11,7 +11,6 @@ from PIL import Image
 from starlette.datastructures import Headers
 from starlette.requests import Request
 
-from api import main
 from api.inference import CLASS_NAMES
 
 
@@ -20,6 +19,10 @@ class FakeModel:
         probabilities = np.zeros((1, len(CLASS_NAMES)), dtype=np.float32)
         probabilities[0, 0] = 1.0
         return probabilities
+
+
+with patch("api.runtime_release.load_model", return_value=FakeModel()):
+    from api import main
 
 
 class NoDatabaseWrites:
