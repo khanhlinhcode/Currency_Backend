@@ -14,6 +14,8 @@ FastAPI nhận dạng **mệnh giá** tiền giấy VN, Mỹ và Ấn Độ (25 
 
 [Báo cáo hậu triển khai](docs/evidence/2026-11-11-integration-preflight.json) phân biệt rõ kết quả cloud với diễn tập cục bộ. Staging dùng PostgreSQL và private Supabase Storage; hệ thống có MLOps Runs, so sánh model, benchmark, monitoring và trang admin phát hành/rollback. Lần deploy mới nhất chỉ smoke `/ready` và dashboard; các luồng đăng nhập/predict đã được kiểm tra ở các bản staging trước, xem [validation report](docs/validation-report.md).
 
+Trang nhận diện staging cho khách xem demo dùng ngay không cần đăng nhập. API giới hạn 30 dự đoán khách mỗi phút trên một instance và không lưu ảnh/lịch sử của khách; các trang dữ liệu và quản trị vẫn yêu cầu đăng nhập. Kết quả của model candidate chỉ dùng để minh họa, không phải chứng nhận độ chính xác.
+
 Kiểm tra ngày 12/11: trước deploy mới, `/ready` trả HTTP 200 sau 42,564 giây từ client và dashboard trả HTTP 200 sau 0,606 giây; sau khi Render báo `live`, `/ready` trả HTTP 200 sau 0,220 giây và dashboard sau 0,593 giây. Đây là các yêu cầu đơn lẻ, không phải benchmark hay cam kết độ trễ. Truy vấn log lỗi Render lần này không thực hiện được do dịch vụ log trả 503.
 
 ### Số liệu hiệu năng staging đã đo

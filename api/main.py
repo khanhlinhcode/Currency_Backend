@@ -9,6 +9,7 @@ import re
 import time
 import uuid
 import threading
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -124,6 +125,23 @@ app.add_middleware(
 # =====================================================
 runtime_release = RuntimeRelease()
 inference_slots = asyncio.Semaphore(INFERENCE_CONCURRENCY)
+DEMO_REQUEST_LIMIT = 30
+DEMO_WINDOW_SECONDS = 60
+demo_request_times = deque()
+demo_request_lock = threading.Lock()
+
+
+def check_demo_rate_limit():
+    """Bound anonymous staging inference on the single-instance Free service."""
+    now = time.monotonic()
+    with demo_request_lock:
+        while demo_request_times and now - demo_request_times[0] >= DEMO_WINDOW_SECONDS:
+            demo_request_times.popleft()
+        if len(demo_request_times) >= DEMO_REQUEST_LIMIT:
+            retry_after = max(1, math.ceil(DEMO_WINDOW_SECONDS - (now - demo_request_times[0])))
+            raise HTTPException(status_code=429, detail="Demo limit reached; please try again shortly",
+                                headers={"Retry-After": str(retry_after)})
+        demo_request_times.append(now)
 
 
 @app.get("/images/{image_key:path}")
@@ -888,7 +906,7 @@ def save_mlops_monitoring(payload: dict, _current_admin: User = Depends(get_curr
     return {"snapshot_id": item.snapshot_id}
 
 # =====================================================
-# PREDICT (PUBLIC)
+# PREDICT (ANONYMOUS DEMO ON STAGING)
 # =====================================================
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(
@@ -898,10 +916,14 @@ async def predict(
     db: Session = Depends(get_db),
 ):
     request_started = time.perf_counter()
+    guest_demo = ENVIRONMENT == "staging" and not current_username
     if ENVIRONMENT == "staging":
-        staging_user = db.query(User).filter(User.username == normalize_username(current_username or "")).first()
-        if staging_user is None or not staging_user.is_active:
-            raise HTTPException(status_code=401, detail="Staging predictions require an active login")
+        if current_username:
+            staging_user = db.query(User).filter(User.username == normalize_username(current_username)).first()
+            if staging_user is None or not staging_user.is_active:
+                raise HTTPException(status_code=401, detail="Account is inactive")
+        else:
+            check_demo_rate_limit()
     requested_by = normalize_username(current_username) if current_username else "guest"
     benchmark_run = request.headers.get("X-Benchmark-Run")
     if benchmark_run and ENVIRONMENT == "staging":
@@ -969,6 +991,10 @@ async def predict(
         "model_version": serving_version,
         "top3": top3,
     }
+
+    if guest_demo:
+        result["processing_time"] = round(time.perf_counter() - request_started, 4)
+        return result
 
     image_filename = f"predictions/{uuid.uuid4()}.jpg"
     image_buffer = io.BytesIO()

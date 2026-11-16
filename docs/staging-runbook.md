@@ -2,7 +2,7 @@
 
 For the current Render Free deployment and dataset v2 quality policy, use [free staging](free-staging-runbook.md) and [MLOps v2](mlops-v2-runbook.md). This document retains the earlier paid-plan benchmark targets for comparison.
 
-Staging runs the candidate model with an isolated PostgreSQL database and a separate private S3 bucket. The backend requires an active login for predictions when `APP_ENV=staging`. The candidate's accuracy is not a production claim.
+Staging runs the candidate model with an isolated PostgreSQL database and a separate private S3 bucket. An anonymous portfolio visitor can predict without login; the API limits guest traffic and does not save guest images or history. Data and management pages still require login. The candidate's accuracy is not a production claim.
 
 ## 1. Prepare and review data
 
@@ -42,8 +42,8 @@ Each `results/runs/<run-id>/` folder contains the input reports, their SHA-256 h
 
 1. Create a **separate private staging S3 bucket**. Set `MODEL_S3_KEY=staging/models/<version>/<artifact>` and the bucket credentials in your local secret environment. Publish the checksum-verified candidate with `python -m scripts.publish_artifact --target staging`.
 2. Connect the backend repository to Render and create a Blueprint with path `render.staging.yaml`. It creates `currency-ai-staging` and `currency-ai-staging-db` in Singapore. Enter the prompted `sync: false` values: exact frontend origin, admin credentials, staging bucket and S3 endpoint/region. Do not copy production credentials or database data into staging.
-3. Deploy a frontend preview with `VITE_API_URL=https://<staging-backend>` and `VITE_APP_ENV=staging`. Login before prediction.
-4. Smoke test `/ready`, `/login`, `/predict`, `/history`, `/stats`, review, image signed URL and dashboard. A guest `/predict` must return 401.
+3. Deploy a frontend preview with `VITE_API_URL=https://<staging-backend>` and `VITE_APP_ENV=staging`. Visitors open the prediction page directly; staff log in for history, dashboard and management.
+4. Smoke test `/ready`, public `/predict`, `/login`, authenticated `/predict`, `/history`, `/stats`, review, image signed URL and dashboard. Guest prediction must succeed without creating an image/history row; guest `/history` and `/stats` must return 401.
 
 Both Render services use paid plans because the TensorFlow container needs 2 GB RAM and the migration uses a pre-deploy command. Render Blueprint validation currently returns `need_payment_info` for this account; billing setup and a connected Git repository are required before cloud provisioning. See the [Render Blueprint specification](https://render.com/docs/blueprint-spec) and [Blueprint setup guide](https://render.com/docs/infrastructure-as-code).
 
