@@ -969,8 +969,8 @@ async def predict(
 
     predicted_class = CLASS_NAMES[best_idx]
     confidence = float(preds[best_idx])
-    is_background_prediction = "background" in predicted_class.lower()
-    suspicious = (confidence < CONFIDENCE_THRESHOLD) or is_background_prediction
+    has_no_denomination = CURRENCY_VALUE[predicted_class] == 0
+    suspicious = (confidence < CONFIDENCE_THRESHOLD) or has_no_denomination
     top3 = [
         {
             "class_name": CLASS_NAMES[int(index)],

@@ -15,9 +15,12 @@ from api.inference import CLASS_NAMES
 
 
 class FakeModel:
+    def __init__(self, class_index=0):
+        self.class_index = class_index
+
     def predict(self, _tensor, verbose=0):
         probabilities = np.zeros((1, len(CLASS_NAMES)), dtype=np.float32)
-        probabilities[0, 0] = 1.0
+        probabilities[0, self.class_index] = 1.0
         return probabilities
 
 
@@ -51,6 +54,20 @@ class PublicDemoTest(unittest.TestCase):
         self.assertEqual(result["model_version"], "demo")
         self.assertGreaterEqual(result["processing_time"], 0)
         save_image.assert_not_called()
+
+    def test_zero_denomination_requires_review_even_at_high_confidence(self):
+        image_bytes = io.BytesIO()
+        Image.new("RGB", (16, 16), "red").save(image_bytes, format="JPEG")
+        upload = UploadFile(file=io.BytesIO(image_bytes.getvalue()), filename="sample.jpg",
+                            headers=Headers({"content-type": "image/jpeg"}))
+        request = Request({"type": "http", "method": "POST", "path": "/predict", "headers": []})
+        model = FakeModel(CLASS_NAMES.index("VN_000000"))
+        with patch.object(main, "ENVIRONMENT", "staging"), \
+             patch.object(main.runtime_release, "snapshot", return_value=(model, {"version": "demo"})):
+            result = asyncio.run(main.predict(request, upload, None, NoDatabaseWrites()))
+        self.assertEqual(result["prediction"], "VN_000000")
+        self.assertEqual(result["estimated_value"], 0)
+        self.assertTrue(result["suspicious"])
 
     def test_guest_rate_limit_returns_retry_after(self):
         with patch.object(main.time, "monotonic", return_value=100.0):
